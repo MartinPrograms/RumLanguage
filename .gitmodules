@@ -1,0 +1,3 @@
+[submodule "QbeGenerator"]
+	path = QbeGenerator
+	url = https://github.com/MartinPrograms/QbeGenerator.git

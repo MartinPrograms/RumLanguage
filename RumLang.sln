@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RumLang", "RumLang\RumLang.csproj", "{38F7FCB6-FB21-4F17-9BC9-24EEABF05618}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RumCompiler", "RumCompiler\RumCompiler.csproj", "{4C1F6046-91E8-4B78-B5CE-E0FD87824266}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QbeGenerator", "QbeGenerator\QbeGenerator\QbeGenerator.csproj", "{A9EDD844-9877-4877-83DE-EE7A18DDB732}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{38F7FCB6-FB21-4F17-9BC9-24EEABF05618}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{38F7FCB6-FB21-4F17-9BC9-24EEABF05618}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{38F7FCB6-FB21-4F17-9BC9-24EEABF05618}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{38F7FCB6-FB21-4F17-9BC9-24EEABF05618}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4C1F6046-91E8-4B78-B5CE-E0FD87824266}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C1F6046-91E8-4B78-B5CE-E0FD87824266}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4C1F6046-91E8-4B78-B5CE-E0FD87824266}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C1F6046-91E8-4B78-B5CE-E0FD87824266}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A9EDD844-9877-4877-83DE-EE7A18DDB732}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9EDD844-9877-4877-83DE-EE7A18DDB732}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9EDD844-9877-4877-83DE-EE7A18DDB732}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9EDD844-9877-4877-83DE-EE7A18DDB732}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
