@@ -1,0 +1,17 @@
+// The standard library for RumLang
+// Import it using `import rum.std`
+
+import c.stdio;
+
+namespace rum
+{
+
+    namespace io
+    {
+        public function print(string str)
+        {
+            c.puts(str.source);
+        }
+    }
+
+}

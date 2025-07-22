@@ -1,0 +1,11 @@
+namespace rum
+{
+    namespace string
+    {
+        class string
+        {
+            public long length;
+            public pointer source;
+        }
+    }
+}

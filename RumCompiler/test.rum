@@ -1,1 +1,11 @@
 // test.rum - A custom language! Using QBE as a backend.
+
+import rum.io;
+
+public void test(int arg1, int arg2);
+
+entrypoint void main()
+{
+    int x = 5 + 25;
+    rum.io.print("Hello, World!");
+}
