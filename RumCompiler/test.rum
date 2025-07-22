@@ -2,10 +2,14 @@
 
 import rum.io;
 
-public void test(int arg1, int arg2);
+// Can be imported using import test_namespace
+namespace test_namespace
+{
+    public void test(int arg1, int arg2);
+}
 
+// File local
 entrypoint void main()
 {
-    int x = 5 + 25;
-    rum.io.print("Hello, World!");
+    int x = (5 - 1) * 5 * 5;
 }

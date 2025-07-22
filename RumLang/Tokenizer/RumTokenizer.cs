@@ -90,7 +90,7 @@ public class RumTokenizer : IDebugInfo
                 int start = _position;
                 while (!IsAtEnd() && Peek() != '\n')
                     Advance();
-                _tokens.Add(new Token(TokenType.Comment, null, null, null, null, null, _source[start.._position], _line, _column));
+                _tokens.Add(new Token(TokenType.Comment, null, null, null, null, _source[start.._position], _line, _column));
                 continue;
             }
             
@@ -112,7 +112,7 @@ public class RumTokenizer : IDebugInfo
                 Advance(); // Skip '*'
                 Advance(); // Skip '/'
                 
-                _tokens.Add(new Token(TokenType.Comment, null, null, null, null, null, _source[start.._position], _line, _column));
+                _tokens.Add(new Token(TokenType.Comment, null, null, null, null, _source[start.._position], _line, _column));
                 continue;
             }
 
@@ -188,7 +188,7 @@ public class RumTokenizer : IDebugInfo
         }
         else
         {
-            _tokens.Add(new Token(Symbol.Identifier, text, _line, col));
+            _tokens.Add(new Token(TokenType.Identifier, null, null, null, null, text, _line, col));
         }
     }
     private void ReadNumber()

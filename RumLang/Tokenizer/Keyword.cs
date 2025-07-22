@@ -24,5 +24,6 @@ public enum Keyword
     Private, // Default
     Internal, // Other items within the same scope can access
     Public, // Can be accessed everywhere
-    Export // Tells the compiler to export it as a c style function.
+    Export, // Tells the compiler to export it as a c style function.
+    Namespace
 }

@@ -16,14 +16,17 @@ public class FunctionDeclarationExpression : Expression
     public AccessModifier Access { get; }
     
     public bool IsEntryPoint { get; }
+    
+    public List<Expression> Expressions { get; }
 
     public FunctionDeclarationExpression(string functionName, List<Expression> arguments, string returnType,
-        AccessModifier accessModifier, bool isEntryPoint = false)
+        AccessModifier accessModifier, List<Expression> expressions, bool isEntryPoint = false)
     {
         FunctionName = functionName;
         Arguments = arguments;
         ReturnType = returnType;
         Access = accessModifier;
+        Expressions = expressions;
         IsEntryPoint = isEntryPoint;
     }
 
@@ -31,12 +34,20 @@ public class FunctionDeclarationExpression : Expression
     {
         StringBuilder sb = new();
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}FunctionDeclaration");
-        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Name: {FunctionName}");
+        sb.Append($"{StringHelpers.Repeat("\t", depth)}:- Name: {FunctionName}");
+        if (IsEntryPoint)
+            sb.Append($" (entrypoint)");
+        if (Expressions.Count <= 0)
+            sb.Append(" (no expressions)");
+        sb.AppendLine();
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Return Type: {ReturnType.ToString()}");
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Access Modifier: {Access.ToString()}");
         var targetDepth = depth + 1;
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Arguments \n{string.Join("\n", Arguments.Select(x => x.GetStringRepresentation(targetDepth)))}");
-
+        
+        if(Expressions.Count > 0)
+            sb.Append(
+                $"{StringHelpers.Repeat("\t", depth)}:- Expressions \n{string.Join("\n", Expressions.Select(x => x.GetStringRepresentation(targetDepth)))}");
         return sb.ToString();
     }
 }
