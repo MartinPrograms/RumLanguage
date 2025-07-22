@@ -16,17 +16,20 @@ public class FunctionDeclarationExpression : Expression
     public AccessModifier Access { get; }
     
     public bool IsEntryPoint { get; }
-    
+
     public List<Expression> Expressions { get; }
+    
+    public bool IsVariadic { get; }
 
     public FunctionDeclarationExpression(string functionName, List<Expression> arguments, string returnType,
-        AccessModifier accessModifier, List<Expression> expressions, bool isEntryPoint = false)
+        AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, bool isEntryPoint = false)
     {
         FunctionName = functionName;
         Arguments = arguments;
         ReturnType = returnType;
         Access = accessModifier;
-        Expressions = expressions;
+        Expressions = expressions; 
+        IsVariadic = isVariadic;
         IsEntryPoint = isEntryPoint;
     }
 
@@ -43,7 +46,8 @@ public class FunctionDeclarationExpression : Expression
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Return Type: {ReturnType.ToString()}");
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Access Modifier: {Access.ToString()}");
         var targetDepth = depth + 1;
-        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Arguments \n{string.Join("\n", Arguments.Select(x => x.GetStringRepresentation(targetDepth)))}");
+        string isVarArg = IsVariadic ? "(variadic)" : string.Empty;
+        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Arguments {isVarArg} \n{string.Join("\n", Arguments.Select(x => x.GetStringRepresentation(targetDepth)))}");
         
         if(Expressions.Count > 0)
             sb.Append(

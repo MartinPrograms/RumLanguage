@@ -145,6 +145,7 @@ public class RumParser : IDebugInfo
                         Advance();
                     }
 
+                    bool isVariadic = false;
                     bool isEntryPoint = false;
                     if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Entrypoint)
                     {
@@ -169,24 +170,32 @@ public class RumParser : IDebugInfo
                         // We have arguments, handle them.
                         while (!Match(Punctuation.RightParenthesis))
                         {
-                            // type identifier, (comma)
-                            var argType = Peek()!.Value;
-                            var argName = Peek(1)!.Value;
-                            var isCommaOrEnd = Peek(2)!.Type == TokenType.Punctuation &&
-                                               Peek(2)!.Punctuation == Punctuation.Comma ||
-                                               Peek(2)!.Punctuation == Punctuation.RightParenthesis;
-
-                            if (!isCommaOrEnd)
+                            if (Peek()!.Type == TokenType.Operator && Peek(0)!.Operator == Operator.Variadic)
                             {
-                                throw new Exception("Argument missing closing ) or , seperator");
+                                isVariadic = true;
+                                Advance(); // Consume the variadic operator
                             }
+                            else
+                            {
+                                var argType = Peek()!.Value;
+                                var argName = Peek(1)!.Value;
+                                var isCommaOrEnd = Peek(2)!.Type == TokenType.Punctuation &&
+                                                   Peek(2)!.Punctuation == Punctuation.Comma ||
+                                                   Peek(2)!.Punctuation == Punctuation.RightParenthesis;
 
-                            arguments.Add(new VariableDeclarationExpression(argName, argType));
-                            Advance();
-                            Advance();
-                            if (Peek()!.Punctuation == Punctuation.RightParenthesis)
-                                continue;
-                            Advance();
+
+                                if (!isCommaOrEnd)
+                                {
+                                    throw new Exception("Argument missing closing ) or , seperator");
+                                }
+
+                                arguments.Add(new VariableDeclarationExpression(argName, argType));
+                                Advance();
+                                Advance();
+                                if (Peek()!.Punctuation == Punctuation.RightParenthesis)
+                                    continue;
+                                Advance();
+                            }
                         }
                     }
 
@@ -200,14 +209,14 @@ public class RumParser : IDebugInfo
 
                         _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType,
                             accessModifier,
-                            new (),false));
+                            new (),isVariadic,false));
                         continue;
                     }
 
                     // Handle code block.
                     Advance(); // Consume the {
                     var expressions = ParseCodeBlock(); // Also consumes the }
-                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isEntryPoint));
+                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isVariadic, isEntryPoint));
                     continue;
                 }
 
@@ -235,7 +244,7 @@ public class RumParser : IDebugInfo
                 Advance();
                 continue;
             }
-
+            
             if (IsVariableDeclaration())
             {
                 var varType = Peek()!.Value;
@@ -268,12 +277,71 @@ public class RumParser : IDebugInfo
                 }
                 continue;
             }
+            
+            if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Return)
+            {
+                Advance(); // Consume the return keyword
+                var returnExpr = ParseExpression();
+                if (!Match(Punctuation.Semicolon))
+                    throw new Exception("Expected ';' after return expression.");
+                expressions.Add(new ReturnExpression(returnExpr));
+                continue;
+            }
 
-            throw new Exception($"Unexpected token \"{Peek()!.Value}\" at {Peek()!.Line}:{Peek()!.Column}");
+            try
+            {
+                var expr = ParseExpression();
+                if (!Match(Punctuation.Semicolon))
+                    throw new Exception("Expected ';' after expression.");
+                expressions.Add(expr);
+                continue;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error parsing expression at {Peek()!.Line}:{Peek()!.Column}: {ex.Message}");
+            }
         }
         
         // Done!
         return expressions;
+    }
+
+    private bool IsMemberAccess()
+    {
+        int position = _position;
+        bool isMemberAccess = false;
+
+        if (Peek()!.Type == TokenType.Identifier)
+        {
+            if (Peek(1)!.Type == TokenType.Operator && Peek(1)!.Operator == Operator.MemberAccess)
+            {
+                Advance();
+                Advance();
+                isMemberAccess = true;
+            }
+        }
+
+        _position = position; // Reset the position
+        return isMemberAccess;
+    }
+
+    private bool IsFunctionCall()
+    {
+        int position = _position;
+        bool isFunctionCall = false;
+        if (Peek()!.Type == TokenType.Identifier)
+        {
+            if (Peek(1)!.Type == TokenType.Punctuation && Peek(1)!.Punctuation == Punctuation.LeftParenthesis)
+            {
+                // This *is* a function call.
+                Advance();
+                Advance();
+                isFunctionCall = true;
+            }
+        }
+
+        _position = position; // Reset the position
+        return isFunctionCall;
     }
 
     private Expression ParseExpression(float parentPrecedence = 0.0f)
@@ -311,37 +379,76 @@ public class RumParser : IDebugInfo
 
         return left;
     }
-    
+
     private Expression ParsePrimary()
     {
+        Expression expr;
+
         var token = Peek()!;
-        
+
         if (token.Type == TokenType.Punctuation && token.Punctuation == Punctuation.LeftParenthesis)
         {
             Advance();
-            var inner = ParseExpression();
-
+            expr = ParseExpression();
             if (!Match(Punctuation.RightParenthesis))
                 throw new Exception($"Expected ')' after expression at {Peek()!.Line}:{Peek()!.Column}");
-
-            return inner;
         }
-        
-        if (token.Type == TokenType.Literal)
+        else if (token.Type == TokenType.Literal)
         {
             Advance();
-            return new LiteralExpression(token.Value, token.Literal!.Value);
+            expr = new LiteralExpression(token.Value, token.Literal!.Value);
         }
-    
-        if (token.Type == TokenType.Identifier)
+        else if (token.Type == TokenType.Identifier)
         {
             Advance();
-            return new IdentifierExpression(token.Value);
+            expr = new IdentifierExpression(token.Value);
+        }
+        else
+        {
+            throw new Exception(
+                $"Unexpected token \"{token.Value}\" at {token.Line}:{token.Column}. Expected a primary expression.");
         }
 
-        throw new Exception($"Unexpected token {token.Value}");
+        // Now handle member access and calls
+        while (true)
+        {
+            if (Peek()!.Type == TokenType.Operator && Peek()!.Operator == Operator.MemberAccess)
+            {
+                Advance(); // consume '.'
+                var memberToken = Peek()!;
+                if (memberToken.Type != TokenType.Identifier)
+                    throw new Exception("Expected identifier after '.'");
+
+                Advance(); // consume identifier
+                expr = new MemberAccessExpression(expr, memberToken.Value);
+            }
+            else if (Peek()!.Type == TokenType.Punctuation && Peek()!.Punctuation == Punctuation.LeftParenthesis)
+            {
+                // Function call (can be after member access!)
+                Advance(); // consume '('
+                var args = new List<Expression>();
+                if (Peek()!.Punctuation != Punctuation.RightParenthesis)
+                {
+                    do
+                    {
+                        args.Add(ParseExpression());
+                    } while (Match(Punctuation.Comma));
+                }
+
+                if (!Match(Punctuation.RightParenthesis))
+                    throw new Exception("Expected ')' after function call arguments");
+
+                expr = new FunctionCallExpression(expr, args); // Updated to take an expression target
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return expr;
     }
-    
+
     private bool IsPrefixUnary(Operator op)
     {
         return op is Operator.Minus or Operator.Not or Operator.BitwiseNot or

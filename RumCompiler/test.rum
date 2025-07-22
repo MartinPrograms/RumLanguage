@@ -3,13 +3,26 @@
 import rum.io;
 
 // Can be imported using import test_namespace
-namespace test_namespace
+namespace testing
 {
     public void test(int arg1, int arg2);
+    public void printf(string format, ...);
+    
+    namespace math
+    {
+        public int add(int a, int b)
+        {
+            return a + b;
+        }
+    }
 }
 
 // File local
 entrypoint void main()
 {
     int x = (5 - 1) * 5 * 5;
+    int x = testing.math.add(5, 6);
+    
+    // If you try calling test(x,y) here, it will compile, and expect a C function by that exact name.
+    // So lets say you link SDL, you should preferably wrap that in a namespace, define all the functions, and then call them.
 }

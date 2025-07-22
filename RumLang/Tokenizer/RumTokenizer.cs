@@ -50,6 +50,7 @@ public class RumTokenizer : IDebugInfo
         { ">>", Operator.RightShift },
         { "->", Operator.PointerAccess }, // Pointer access operator
         { ".", Operator.MemberAccess }, // Member access operator
+        { "...", Operator.Variadic } // Variadic operator
     };
     
     private static readonly Dictionary<char, Punctuation> _punctuation = new()

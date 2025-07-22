@@ -26,5 +26,6 @@ public enum Operator
     LeftShift, // <<, bitwise left shift
     RightShift, // >>, bitwise right shift
     PointerAccess,
-    MemberAccess
+    MemberAccess,
+    Variadic, // ..., used for variadic functions
 }
