@@ -21,8 +21,26 @@ namespace testing
 entrypoint void main()
 {
     int x = (5 - 1) * 5 * 5;
-    int x = testing.math.add(5, 6);
+    int y = testing.math.add(5, 6);
     
-    // If you try calling test(x,y) here, it will compile, and expect a C function by that exact name.
-    // So lets say you link SDL, you should preferably wrap that in a namespace, define all the functions, and then call them.
+    if (x > 10)
+    {
+        testing.printf("x is greater than 10: %d\n", x);
+    }
+    else if (x < 10)
+    {
+        if (y > 10)
+        {
+            testing.printf("y is greater than 10: %d\n", y);
+        }
+        else
+        {
+            testing.printf("y is not greater than 10: %d\n", y);
+        }
+        testing.printf("x is less than 10: %d\n", x);
+    }
+    else
+    {
+        testing.printf("x is exactly 10: %d\n", x);
+    }
 }

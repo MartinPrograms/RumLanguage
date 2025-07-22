@@ -283,8 +283,24 @@ public class RumParser : IDebugInfo
                 Advance(); // Consume the return keyword
                 var returnExpr = ParseExpression();
                 if (!Match(Punctuation.Semicolon))
-                    throw new Exception("Expected ';' after return expression.");
+                    throw new Exception("Expected \";\" after return expression.");
                 expressions.Add(new ReturnExpression(returnExpr));
+                continue;
+            }
+
+            if (Match(Keyword.If))
+            {
+                // Get the condition
+                try
+                {
+                    var ifExpr = ParseIfStatement();
+                    _currentNodes.Add(ifExpr);
+                    expressions.Add(ifExpr);
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Error parsing if statement at {Peek()!.Line}:{Peek()!.Column}: {ex.Message}");
+                }
                 continue;
             }
 
@@ -292,7 +308,7 @@ public class RumParser : IDebugInfo
             {
                 var expr = ParseExpression();
                 if (!Match(Punctuation.Semicolon))
-                    throw new Exception("Expected ';' after expression.");
+                    throw new Exception("Expected \";\" after expression.");
                 expressions.Add(expr);
                 continue;
             }
@@ -306,43 +322,35 @@ public class RumParser : IDebugInfo
         return expressions;
     }
 
-    private bool IsMemberAccess()
+    private IfExpression ParseIfStatement()
     {
-        int position = _position;
-        bool isMemberAccess = false;
-
-        if (Peek()!.Type == TokenType.Identifier)
+        if (!Match(Punctuation.LeftParenthesis))
+            throw new Exception("Expected \"(\" after \"if\" keyword.");
+        var condition = ParseExpression();
+        if (!Match(Punctuation.RightParenthesis))
+            throw new Exception("Expected \")\" after \"if\" condition.");
+        if (!Match(Punctuation.LeftBrace))
+            throw new Exception("Expected \"{\" after \"if\" condition.");
+        var ifBlock = ParseCodeBlock();
+        List<Expression> elseBlock = new List<Expression>();
+        // Check for the optional else block
+        IfExpression? elseIf = null;
+        if (Match(Keyword.Else))
         {
-            if (Peek(1)!.Type == TokenType.Operator && Peek(1)!.Operator == Operator.MemberAccess)
+            if (Match(Keyword.If))
             {
-                Advance();
-                Advance();
-                isMemberAccess = true;
+                elseIf = ParseIfStatement(); // nicely nested
+                elseBlock = new List<Expression> { elseIf };
+            }
+            else
+            {
+                if (!Match(Punctuation.LeftBrace))
+                    throw new Exception("Expected \"{\" or \"if\" after \"else\" keyword.");
+                elseBlock = ParseCodeBlock();
             }
         }
 
-        _position = position; // Reset the position
-        return isMemberAccess;
-    }
-
-    private bool IsFunctionCall()
-    {
-        int position = _position;
-        bool isFunctionCall = false;
-        if (Peek()!.Type == TokenType.Identifier)
-        {
-            if (Peek(1)!.Type == TokenType.Punctuation && Peek(1)!.Punctuation == Punctuation.LeftParenthesis)
-            {
-                // This *is* a function call.
-                Advance();
-                Advance();
-                isFunctionCall = true;
-            }
-        }
-
-        _position = position; // Reset the position
-        return isFunctionCall;
-    }
+        return new IfExpression(condition, ifBlock, elseBlock);    }
 
     private Expression ParseExpression(float parentPrecedence = 0.0f)
     {
@@ -391,7 +399,7 @@ public class RumParser : IDebugInfo
             Advance();
             expr = ParseExpression();
             if (!Match(Punctuation.RightParenthesis))
-                throw new Exception($"Expected ')' after expression at {Peek()!.Line}:{Peek()!.Column}");
+                throw new Exception($"Expected \")\" after expression at {Peek()!.Line}:{Peek()!.Column}");
         }
         else if (token.Type == TokenType.Literal)
         {
@@ -414,10 +422,10 @@ public class RumParser : IDebugInfo
         {
             if (Peek()!.Type == TokenType.Operator && Peek()!.Operator == Operator.MemberAccess)
             {
-                Advance(); // consume '.'
+                Advance(); // consume \".\"
                 var memberToken = Peek()!;
                 if (memberToken.Type != TokenType.Identifier)
-                    throw new Exception("Expected identifier after '.'");
+                    throw new Exception("Expected identifier after \".\"");
 
                 Advance(); // consume identifier
                 expr = new MemberAccessExpression(expr, memberToken.Value);
@@ -425,7 +433,7 @@ public class RumParser : IDebugInfo
             else if (Peek()!.Type == TokenType.Punctuation && Peek()!.Punctuation == Punctuation.LeftParenthesis)
             {
                 // Function call (can be after member access!)
-                Advance(); // consume '('
+                Advance(); // consume \"(\"
                 var args = new List<Expression>();
                 if (Peek()!.Punctuation != Punctuation.RightParenthesis)
                 {
@@ -436,7 +444,7 @@ public class RumParser : IDebugInfo
                 }
 
                 if (!Match(Punctuation.RightParenthesis))
-                    throw new Exception("Expected ')' after function call arguments");
+                    throw new Exception("Expected \")\" after function call arguments");
 
                 expr = new FunctionCallExpression(expr, args); // Updated to take an expression target
             }
