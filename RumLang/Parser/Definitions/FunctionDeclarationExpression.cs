@@ -20,9 +20,11 @@ public class FunctionDeclarationExpression : Expression
     public List<Expression> Expressions { get; }
     
     public bool IsVariadic { get; }
+    
+    public bool Export { get; }
 
     public FunctionDeclarationExpression(string functionName, List<Expression> arguments, string returnType,
-        AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, bool isEntryPoint = false)
+        AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, bool isEntryPoint = false, bool export = false)
     {
         FunctionName = functionName;
         Arguments = arguments;
@@ -31,6 +33,7 @@ public class FunctionDeclarationExpression : Expression
         Expressions = expressions; 
         IsVariadic = isVariadic;
         IsEntryPoint = isEntryPoint;
+        Export = export;
     }
 
     public override string GetStringRepresentation(int depth = 0)
@@ -42,6 +45,8 @@ public class FunctionDeclarationExpression : Expression
             sb.Append($" (entrypoint)");
         if (Expressions.Count <= 0)
             sb.Append(" (no expressions)");
+        if (Export)
+            sb.Append(" (exported)");
         sb.AppendLine();
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Return Type: {ReturnType.ToString()}");
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Access Modifier: {Access.ToString()}");

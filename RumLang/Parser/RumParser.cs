@@ -21,6 +21,7 @@ public class RumParser : IDebugInfo
     private long _milliseconds = 0;
 
     private bool _isInFunction = false;
+    private bool _isInClass = false;
 
     private Stack<(string Namespace, List<AstNode> Nodes)> _namespaces = new();
     private List<AstNode> _currentNodes;
@@ -114,17 +115,152 @@ public class RumParser : IDebugInfo
                     continue;
                 }
 
-                if (Match(Keyword.Namespace))
+                if (IsNamespaceStart())
                 {
+                    if (_isInFunction || _isInClass)
+                    {
+                        throw new Exception("Can not declare namespace within function or class scope.");
+                    }
+                    var hasAccessModifier = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Public ||
+                                             Peek()!.Keyword == Keyword.Private || Peek()!.Keyword == Keyword.Internal;
+                    AccessModifier accessModifier = AccessModifier.Public; // Default to public
+                    if (hasAccessModifier)
+                    {
+                        if (Peek()!.Keyword == Keyword.Private)
+                            accessModifier = AccessModifier.Private;
+                        if (Peek()!.Keyword == Keyword.Internal)
+                            accessModifier = AccessModifier.Internal;
+
+                        Advance(); // Consume the access modifier
+                    }
+                    
                     var namespaceName = Peek()!.Value;
                     var nodes = new List<AstNode>();
-                    _currentNodes.Add(new NamespaceDeclarationExpression(namespaceName, nodes));
+                    _currentNodes.Add(new NamespaceDeclarationExpression(namespaceName, nodes, accessModifier));
                     _currentNodes = nodes;
                     _namespaces.Push((namespaceName, nodes));
                     Advance();
                     if (!Match(Punctuation.LeftBrace))
                         throw new Exception("Expected \"{\" after namespace identifier!");
                     
+                    continue;
+                }
+
+                if (IsClassStart())
+                {
+                    if (_isInClass || _isInFunction)
+                    {
+                        throw new Exception("Can not declare class within function or class scope.");
+                    }
+                    _isInClass = true;
+                    var accessModifier = AccessModifier.Private; // Default to private
+                    if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Private ||
+                        Peek()!.Keyword == Keyword.Internal || Peek()!.Keyword == Keyword.Public)
+                    {
+                        if (Peek()!.Keyword == Keyword.Internal)
+                            accessModifier = AccessModifier.Internal;
+                        if (Peek()!.Keyword == Keyword.Public)
+                            accessModifier = AccessModifier.Public;
+
+                        Advance();
+                    }
+
+                    Advance(); // Consume "class" 
+                    var className = Peek()!.Value;
+                    Advance(); // Consume the class name
+                    if (!Match(Punctuation.LeftBrace))
+                        throw new Exception($"Expected \"{{\" after class name! At {Peek()}");
+                    
+                    // Now we are in a class scope, we can add class members.
+                    List<FunctionDeclarationExpression> functions = new();
+                    List<ClassMemberDeclaration> variables = new();
+                    FunctionDeclarationExpression? constructor = null; // Will be set later if found, can be found by having no return type. `public/internal/private constructor()`
+
+                    while (!Match(Punctuation.RightBrace))
+                    {
+                        bool hasAccessModifier = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Private ||
+                                                 Peek()!.Keyword == Keyword.Internal || Peek()!.Keyword == Keyword.Public;
+                        AccessModifier memberAccessModifier = AccessModifier.Private; // Default to private
+                        if (hasAccessModifier)
+                        {
+                            if (Peek()!.Keyword == Keyword.Internal)
+                                memberAccessModifier = AccessModifier.Internal;
+                            if (Peek()!.Keyword == Keyword.Public)
+                                memberAccessModifier = AccessModifier.Public;
+
+                            Advance();
+                        }
+                        
+                        if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Export)
+                            throw new Exception("The \"export\" keyword is only allowed on top-level or namespace-scoped functions. Class member functions cannot be exported directly.");
+                        
+                        // Check if it is a constructor by checking if the next token is a left parenthesis.
+                        if (Peek()!.Type == TokenType.Identifier && Peek()!.Value == className && Peek(1)!.Type == TokenType.Punctuation &&
+                            Peek(1)!.Punctuation == Punctuation.LeftParenthesis)
+                        {
+                            // This *is* a constructor!
+                            Advance();
+                            Advance(); // We are now in argument space.
+
+                            bool isVariadic = false;
+                            var arguments = GetArguments(ref isVariadic);
+                            if (!Match(Punctuation.LeftBrace))
+                                throw new Exception("Expected \"{\" after constructor definition!");
+
+                            var codeblock = ParseCodeBlock();
+                            constructor = new FunctionDeclarationExpression(className, arguments, className,
+                                accessModifier, codeblock, isVariadic);
+                            continue;
+                        }
+
+                        if (Peek()!.Type == TokenType.Identifier && Peek(1)!.Type == TokenType.Identifier)
+                        {
+                            // This is a variable declaration or function declaration.
+                            var type = Peek()!.Value;
+                            var name = Peek(1)!.Value;
+                            Advance();
+                            Advance();
+                            bool isFunction = Peek()!.Type == TokenType.Punctuation &&
+                                              Peek()!.Punctuation == Punctuation.LeftParenthesis;
+                            bool isVariable = Peek()!.Type == TokenType.Punctuation &&
+                                              Peek()!.Punctuation == Punctuation.Semicolon;
+                            
+                            if (!isFunction && !isVariable)
+                                throw new Exception($"Expected punctuation, \"(\" or \";\" after declaration at {Peek()}");
+                            
+                            if (isVariable)
+                            {
+                                variables.Add(new ClassMemberDeclaration(name, type, memberAccessModifier));
+                                Advance();
+                                continue;
+                            }
+
+                            if (isFunction)
+                            {
+                                Advance(); // Now in argument space.
+                                var isVariadic = false;
+                                var arguments = GetArguments(ref isVariadic);
+                                if (Match(Punctuation.Semicolon))
+                                {
+                                    _currentNodes.Add(new FunctionDeclarationExpression(name, arguments, type,
+                                        accessModifier,
+                                        new (),isVariadic,false));
+                                    continue;
+                                }
+                                
+                                Advance(); // Consume the {
+                                var expressions = ParseCodeBlock(); // Also consumes the }
+                                functions.Add(new FunctionDeclarationExpression(name, arguments, type, memberAccessModifier, expressions, isVariadic, false));
+                                continue;
+                            }
+                        }
+                    }
+                    
+                    // Now we can create the class itself
+                    if (constructor != null)
+                        functions.Add(constructor);
+                    _currentNodes.Add(new ClassDeclarationExpression(className, accessModifier, functions, variables));
+                    _isInClass = false;
                     continue;
                 }
 
@@ -144,6 +280,12 @@ public class RumParser : IDebugInfo
 
                         Advance();
                     }
+                    
+                    bool isExported = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Export;
+                    if (isExported)
+                    {
+                        Advance(); // Consume the export keyword
+                    }
 
                     bool isVariadic = false;
                     bool isEntryPoint = false;
@@ -159,45 +301,7 @@ public class RumParser : IDebugInfo
                     Advance();
                     Advance();
                     Advance(); // We are now on the start of the arguments, if it is not ) there are arguments in the list.
-                    List<Expression> arguments = new List<Expression>();
-
-                    if (Peek()!.Type == TokenType.Punctuation && Peek()!.Punctuation == Punctuation.RightParenthesis)
-                    {
-                        Advance();
-                    }
-                    else
-                    {
-                        // We have arguments, handle them.
-                        while (!Match(Punctuation.RightParenthesis))
-                        {
-                            if (Peek()!.Type == TokenType.Operator && Peek(0)!.Operator == Operator.Variadic)
-                            {
-                                isVariadic = true;
-                                Advance(); // Consume the variadic operator
-                            }
-                            else
-                            {
-                                var argType = Peek()!.Value;
-                                var argName = Peek(1)!.Value;
-                                var isCommaOrEnd = Peek(2)!.Type == TokenType.Punctuation &&
-                                                   Peek(2)!.Punctuation == Punctuation.Comma ||
-                                                   Peek(2)!.Punctuation == Punctuation.RightParenthesis;
-
-
-                                if (!isCommaOrEnd)
-                                {
-                                    throw new Exception("Argument missing closing ) or , seperator");
-                                }
-
-                                arguments.Add(new VariableDeclarationExpression(argName, argType));
-                                Advance();
-                                Advance();
-                                if (Peek()!.Punctuation == Punctuation.RightParenthesis)
-                                    continue;
-                                Advance();
-                            }
-                        }
-                    }
+                    var arguments = GetArguments(ref isVariadic);
 
                     if (Match(Punctuation.Semicolon))
                     {
@@ -207,16 +311,21 @@ public class RumParser : IDebugInfo
                             throw new Exception("Entry point must contain code block!");
                         }
 
+                        if (isExported)
+                        {
+                            throw new Exception("Exported functions must contain code block!");
+                        }
+
                         _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType,
                             accessModifier,
-                            new (),isVariadic,false));
+                            new (),isVariadic,false, false));
                         continue;
                     }
 
                     // Handle code block.
                     Advance(); // Consume the {
                     var expressions = ParseCodeBlock(); // Also consumes the }
-                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isVariadic, isEntryPoint));
+                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isVariadic, isEntryPoint, isExported || isEntryPoint));
                     continue;
                 }
 
@@ -232,6 +341,82 @@ public class RumParser : IDebugInfo
         sw.Stop();
         _milliseconds = sw.ElapsedMilliseconds;
         return new ParserResult(ParserError.Success, _nodes, null);
+    }
+
+    private bool IsNamespaceStart()
+    {
+        // Check if an access modifier is present.
+        bool hasAccessModifier = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Public ||
+                                 Peek()!.Keyword == Keyword.Private || Peek()!.Keyword == Keyword.Internal;
+        int offset = hasAccessModifier ? 1 : 0;
+        if (Peek(offset)?.Type != TokenType.Keyword || Peek(offset)!.Keyword != Keyword.Namespace)
+            return false;
+        if (Peek(1 + offset)?.Type != TokenType.Identifier)
+            return false;
+        if (Peek(2 + offset)?.Type != TokenType.Punctuation || Peek(2 + offset)!.Punctuation != Punctuation.LeftBrace)
+            return false;
+        return true;
+    }
+
+    private List<Expression> GetArguments(ref bool isVariadic)
+    {
+        List<Expression> arguments = new List<Expression>();
+
+        if (Peek()!.Type == TokenType.Punctuation && Peek()!.Punctuation == Punctuation.RightParenthesis)
+        {
+            Advance();
+        }
+        else
+        {
+            // We have arguments, handle them.
+            while (!Match(Punctuation.RightParenthesis))
+            {
+                if (Peek()!.Type == TokenType.Operator && Peek(0)!.Operator == Operator.Variadic)
+                {
+                    isVariadic = true;
+                    Advance(); // Consume the variadic operator
+                }
+                else
+                {
+                    var argType = Peek()!.Value;
+                    var argName = Peek(1)!.Value;
+                    var isCommaOrEnd = Peek(2)!.Type == TokenType.Punctuation &&
+                                       Peek(2)!.Punctuation == Punctuation.Comma ||
+                                       Peek(2)!.Punctuation == Punctuation.RightParenthesis;
+
+
+                    if (!isCommaOrEnd)
+                    {
+                        throw new Exception("Argument missing closing ) or , seperator");
+                    }
+
+                    arguments.Add(new VariableDeclarationExpression(argName, argType));
+                    Advance();
+                    Advance();
+                    if (Peek()!.Punctuation == Punctuation.RightParenthesis)
+                        continue;
+                    Advance();
+                }
+            }
+        }
+
+        return arguments;
+    }
+
+    private bool IsClassStart()
+    {
+        bool hasAccessModifier = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Public ||
+                                 Peek()!.Keyword == Keyword.Private || Peek()!.Keyword == Keyword.Internal;
+
+        int offset = hasAccessModifier ? 1 : 0;
+        
+        if (Peek(offset)?.Type != TokenType.Keyword || Peek(offset)!.Keyword != Keyword.Class)
+            return false;
+        if (Peek(1 + offset)?.Type != TokenType.Identifier)
+            return false;
+        if (Peek(2 + offset)?.Type != TokenType.Punctuation || Peek(2 + offset)!.Punctuation != Punctuation.LeftBrace)
+            return false;
+        return true;
     }
 
     private List<Expression> ParseCodeBlock()
@@ -303,7 +488,59 @@ public class RumParser : IDebugInfo
                 }
                 continue;
             }
+            
+            if (Match(Keyword.While))
+            {
+                if (!Match(Punctuation.LeftParenthesis))
+                    throw new Exception("Expected \"(\" after \"while\" keyword.");
+                var condition = ParseExpression();
+                if (!Match(Punctuation.RightParenthesis))
+                    throw new Exception("Expected \")\" after \"while\" condition.");
+                if (!Match(Punctuation.LeftBrace))
+                    throw new Exception("Expected \"{\" after \"while\" condition.");
+                var body = ParseCodeBlock();
+                expressions.Add(new WhileExpression(condition, body));
+                continue;
+            }
+            if (Match(Keyword.For))
+            {
+                if (!Match(Punctuation.LeftParenthesis))
+                    throw new Exception("Expected \"(\" after \"for\" keyword.");
+                var initializer = ParseExpression();
+                if (!Match(Punctuation.Semicolon))
+                    throw new Exception("Expected \";\" after for initializer.");
+                var condition = ParseExpression();
+                if (!Match(Punctuation.Semicolon))
+                    throw new Exception("Expected \";\" after for condition.");
+                var increment = ParseExpression();
+                if (!Match(Punctuation.RightParenthesis))
+                    throw new Exception("Expected \")\" after for increment.");
+                if (!Match(Punctuation.LeftBrace))
+                    throw new Exception("Expected \"{\" after for loop.");
 
+                var body = ParseCodeBlock();
+                expressions.Add(new ForExpression(initializer, condition, increment, body));
+                continue;
+            }
+            if (Match(Keyword.Do))
+            {
+                if (!Match(Punctuation.LeftBrace))
+                    throw new Exception("Expected \"{\" after \"do\" keyword.");
+                var body = ParseCodeBlock();
+                if (!Match(Keyword.While))
+                    throw new Exception("Expected \"while\" after \"do\" block.");
+                if (!Match(Punctuation.LeftParenthesis))
+                    throw new Exception("Expected \"(\" after \"while\" keyword.");
+                var condition = ParseExpression();
+                if (!Match(Punctuation.RightParenthesis))
+                    throw new Exception("Expected \")\" after \"while\" condition.");
+                if (!Match(Punctuation.Semicolon))
+                    throw new Exception("Expected \";\" after \"while\" condition.");
+                
+                expressions.Add(new DoWhileExpression(condition, body));
+                continue;
+            }
+            
             try
             {
                 var expr = ParseExpression();
@@ -381,8 +618,15 @@ public class RumParser : IDebugInfo
             var op = Peek()!.Operator!.Value;
             Advance();
 
-            var right = ParseExpression(precedence.RightPrecedence); // Right-associativity
-            left = new BinaryExpression(left, op, right);
+            var right = ParseExpression(precedence.RightPrecedence);
+            if (op == Operator.Assignment)
+            {
+                left = new AssignmentExpression(left, right);
+            }
+            else
+            {
+                left = new BinaryExpression(left, op, right);
+            }
         }
 
         return left;
@@ -410,6 +654,69 @@ public class RumParser : IDebugInfo
         {
             Advance();
             expr = new IdentifierExpression(token.Value);
+        }
+        else if (token.Type == TokenType.Keyword && token.Keyword == Keyword.New)
+        {
+            Advance(); // Consume the "new" keyword
+            if (Peek()!.Type != TokenType.Identifier)
+                throw new Exception($"Expected type identifier after \"new\" at {Peek()!.Line}:{Peek()!.Column}");
+            var typeName = Peek()!.Value;
+            Advance(); // Consume the type identifier
+
+            if (!Match(Punctuation.LeftParenthesis))
+                throw new Exception($"Expected \"(\" after type identifier at {Peek()!.Line}:{Peek()!.Column}");
+
+            var args = new List<Expression>();
+            if (Peek()!.Punctuation != Punctuation.RightParenthesis)
+            {
+                do
+                {
+                    args.Add(ParseExpression());
+                } while (Match(Punctuation.Comma));
+            }
+
+            if (!Match(Punctuation.RightParenthesis))
+                throw new Exception("Expected \")\" after constructor arguments");
+
+            expr = new NewExpression(typeName, args);
+        }
+        else if (token.Type == TokenType.Keyword && token.Keyword == Keyword.Destroy)
+        {
+            Advance(); // Consume the "destroy" keyword
+            if (Peek()!.Type != TokenType.Identifier)
+                throw new Exception($"Expected identifier after \"destroy\" at {Peek()!.Line}:{Peek()!.Column}");
+            var identifier = Peek()!.Value;
+            Advance(); // Consume the identifier
+            
+            expr = new DestroyExpression(identifier);
+        }
+        else if (token.Type == TokenType.Keyword && token.Keyword == Keyword.Null)
+        {
+            Advance();
+            expr = new LiteralExpression("null", Literal.Null);
+        }
+        else if (Match(Keyword.True))
+        {
+            expr = new LiteralExpression("1", Literal.Int); // TODO: Maybe use a better representation for booleans?
+        }
+        else if (Match(Keyword.False))
+        {
+            expr = new LiteralExpression("0", Literal.Int);
+        }
+        else if (Match(Keyword.Continue))
+        {
+            expr = new ContinueExpression();
+        }
+        else if (Match(Keyword.Break))
+        {
+            expr = new BreakExpression();
+        }
+        else if (Match(Keyword.This))
+        {
+            // This is a reference to the current instance in a class.
+            if (!_isInClass)
+                throw new Exception("The \"this\" keyword can only be used within a class scope.");
+            expr = new ThisExpression();
         }
         else
         {
@@ -485,6 +792,11 @@ public class RumParser : IDebugInfo
         // First check for an access modifier
         if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Private ||
             Peek()!.Keyword == Keyword.Internal || Peek()!.Keyword == Keyword.Public)
+        {
+            Advance();
+        }
+
+        if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Export)
         {
             Advance();
         }
@@ -596,6 +908,11 @@ public class RumParser : IDebugInfo
             {
                 sb.AppendLine(node.GetStringRepresentation());
             }
+        }
+        
+        if (level <= DebugLevel.Info)
+        {
+            sb.AppendLine($"Parser took {_milliseconds}ms to parse {_tokens.Count} tokens. Rate of {(float)_tokens.Count / ((float)_milliseconds / 1000.0f)} tokens per second.");
         }
 
         return sb.ToString();

@@ -6,11 +6,13 @@ public class NamespaceDeclarationExpression : Expression
 {
     public string Identifier { get; }
     public List<AstNode> Nodes { get; }
+    public AccessModifier AccessModifier { get; set; } = AccessModifier.Public;
 
-    public NamespaceDeclarationExpression(string identifier, List<AstNode> nodes)
+    public NamespaceDeclarationExpression(string identifier, List<AstNode> nodes, AccessModifier accessModifier = AccessModifier.Public)
     {
         Identifier = identifier;
         Nodes = nodes;
+        AccessModifier = accessModifier;
     }
 
     public override string GetStringRepresentation(int depth = 0)

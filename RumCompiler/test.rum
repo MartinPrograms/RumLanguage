@@ -2,45 +2,8 @@
 
 import rum.io;
 
-// Can be imported using import test_namespace
-namespace testing
-{
-    public void test(int arg1, int arg2);
-    public void printf(string format, ...);
-    
-    namespace math
-    {
-        public int add(int a, int b)
-        {
-            return a + b;
-        }
-    }
-}
-
 // File local
 entrypoint void main()
 {
-    int x = (5 - 1) * 5 * 5;
-    int y = testing.math.add(5, 6);
-    
-    if (x > 10)
-    {
-        testing.printf("x is greater than 10: %d\n", x);
-    }
-    else if (x < 10)
-    {
-        if (y > 10)
-        {
-            testing.printf("y is greater than 10: %d\n", y);
-        }
-        else
-        {
-            testing.printf("y is not greater than 10: %d\n", y);
-        }
-        testing.printf("x is less than 10: %d\n", x);
-    }
-    else
-    {
-        testing.printf("x is exactly 10: %d\n", x);
-    }
+    rum.io.printf("Hello, World!\n");
 }

@@ -8,9 +8,8 @@ namespace rum
 
     namespace io
     {
-        public function print(string str)
-        {
-            c.puts(str.source);
+        public void printf(string format, ...){
+            c.stdio.printf(format, ...);
         }
     }
 
