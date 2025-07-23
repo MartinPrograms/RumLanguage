@@ -20,6 +20,7 @@ public class NamespaceDeclarationExpression : Expression
         var sb = new StringBuilder();
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}Namespace Declaration");
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Identifier: {Identifier}");
+        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Access Modifier: {AccessModifier}");
         sb.AppendLine(
             $"{StringHelpers.Repeat("\t", depth)}:- Nodes: \n{StringHelpers.Repeat("\t", depth)}{string.Join($"\n", Nodes.Select(x => x.GetStringRepresentation(depth + 1)))}");
         return sb.ToString();

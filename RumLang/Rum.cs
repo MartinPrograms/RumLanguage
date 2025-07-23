@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using RumLang.Analyzer;
 using RumLang.Parser;
 using RumLang.Tokenizer;
 
@@ -6,32 +7,67 @@ namespace RumLang;
 
 public record RumResult(RumError Error, string? ErrorMessage = null, string? OutputCode = null);
 
-public class Rum(params string[] libraryDirectories)
+public class Rum
 {
-    private readonly string[] _libraryDirectories = libraryDirectories;
-    
+    public readonly string[] LibraryDirectories;
+
+    public Rum(params string[] libraryDirectories)
+    {
+        this.LibraryDirectories = libraryDirectories;
+    }
+
+    // Expose Tokenize
+    public (TokenizerError Error, List<Token>? Tokens, string? ErrorString, RumTokenizer tokenizer) Tokenize(string source)
+    {
+        var tokenizer = new RumTokenizer();
+        var result = tokenizer.Tokenize(source);
+        return (result.Error, result.Tokens, result.ErrorString, tokenizer);
+    }
+
+    // Expose Parse
+    public (ParserError Error, List<AstNode>? Root, string? ErrorString, RumParser parser) Parse(List<Token> tokens)
+    {
+        var parser = new RumParser(tokens);
+        var result = parser.Parse();
+        return (result.Error, result.Root, result.ErrorString, parser);
+    }
+
     public RumResult Compile(string sourceCode, bool printDebugInfo = false)
     {
-        RumTokenizer tokenizer = new();
-        var tokenizerResult = tokenizer.Tokenize(sourceCode);
-
-        if (tokenizerResult.Error != TokenizerError.Success)
-            return new RumResult(RumError.TokenizerError, tokenizerResult.ErrorString, null);
-
-        var tokenizerDebugInfo = tokenizer.GetDebugInfo();
+        // Tokenization
+        var (tokErr, tokens, tokErrMsg, tokenizer) = Tokenize(sourceCode);
+        if (tokErr != TokenizerError.Success)
+            return new RumResult(RumError.TokenizerError, tokErrMsg);
         if (printDebugInfo)
-            Console.WriteLine(tokenizerDebugInfo);
+            Console.WriteLine(tokenizer.GetDebugInfo());
 
-        RumParser parser = new(tokenizerResult.Tokens!);
-        var parserResult = parser.Parse();
-        if (parserResult.Error != ParserError.Success)
-            return new RumResult(RumError.ParserError, parserResult.ErrorString, null);
-
-        var parserDebugInfo = parser.GetDebugInfo();
+        // Parsing
+        var (parseErr, astRoot, parseErrMsg, parser) = Parse(tokens!);
+        if (parseErr != ParserError.Success)
+            return new RumResult(RumError.ParserError, parseErrMsg);
         if (printDebugInfo)
-            Console.WriteLine(parserDebugInfo);
-        
-        StringBuilder outputCode = new StringBuilder();
+            Console.WriteLine(parser.GetDebugInfo());
+
+        // Semantic Analysis
+        var analyzer = new RumAnalyzer(this, astRoot!);
+        var analysisResults = analyzer.Analyze();
+        var errors = analysisResults.FindAll(r => r.Type != AnalyzerResultType.Success);
+        if (errors.Count > 0)
+        {
+            var sb = new StringBuilder();
+            foreach (var r in errors)
+                sb.AppendLine($"Error: {r.Message} at Line {r.LineNumber}, Column {r.ColumnNumber}");
+            return new RumResult(RumError.AnalysisError, sb.ToString());
+        }
+
+        if (printDebugInfo)
+        {
+            foreach (var r in analysisResults)
+                Console.WriteLine($"{r.Type}: {r.Message} at Line {r.LineNumber}, Column {r.ColumnNumber}");
+        }
+
+        // Code generation placeholder
+        var outputCode = new StringBuilder();
         return new RumResult(RumError.Success, outputCode.ToString());
     }
 }

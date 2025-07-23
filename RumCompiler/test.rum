@@ -2,6 +2,20 @@
 
 import rum.io;
 
+public class test
+{
+    private int money;
+    
+    public test(int starting_money)
+    {
+        money = starting_money;
+    }
+    
+    public int get_money(){
+        return money;
+    }
+}
+
 // File local
 entrypoint void main()
 {

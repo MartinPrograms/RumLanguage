@@ -133,6 +133,7 @@ public class RumParser : IDebugInfo
 
                         Advance(); // Consume the access modifier
                     }
+                    Advance(); // Consume the "namespace" keyword
                     
                     var namespaceName = Peek()!.Value;
                     var nodes = new List<AstNode>();

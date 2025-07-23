@@ -5,5 +5,6 @@ public enum RumError
     Success,
     Error,
     TokenizerError,
-    ParserError
+    ParserError,
+    AnalysisError
 }
