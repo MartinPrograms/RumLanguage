@@ -708,6 +708,10 @@ public class RumParser : IDebugInfo
         {
             expr = new ContinueExpression();
         }
+        else if (Match(Operator.Variadic))
+        {
+            expr = new VariadicExpression();
+        }
         else if (Match(Keyword.Break))
         {
             expr = new BreakExpression();

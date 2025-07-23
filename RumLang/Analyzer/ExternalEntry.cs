@@ -63,7 +63,16 @@ public class ExternalEntry
                     if (parentNamespace != null)
                         parentNamespace.Types.Add(type);
                 }
+                else if (node is FunctionDeclarationExpression fde)
+                {
+                    if (parentNamespace == null)
+                        throw new Exception("Function declaration found outside of a namespace or class context.");
+                    parentNamespace.Functions.Add(fde);
+                }
             }
         }
+        
+        // Start crawling from the root nodes
+        CrawlNodes(root);
     }
 }

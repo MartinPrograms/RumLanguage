@@ -18,6 +18,9 @@
       <None Update="stdlib\io.rum">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </None>
+      <None Update="stdlib\text.rum">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
 </Project>

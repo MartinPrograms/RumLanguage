@@ -1,20 +1,7 @@
 // test.rum - A custom language! Using QBE as a backend.
 
 import rum.io;
-
-public class test
-{
-    private int money;
-    
-    public test(int starting_money)
-    {
-        money = starting_money;
-    }
-    
-    public int get_money(){
-        return money;
-    }
-}
+import rum.text;
 
 // File local
 entrypoint void main()
