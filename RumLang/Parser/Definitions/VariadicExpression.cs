@@ -2,7 +2,8 @@ namespace RumLang.Parser.Definitions;
 
 public class VariadicExpression : Expression
 {
-    public VariadicExpression()
+    public VariadicExpression(int lineNumber, int columnNumber) 
+    : base(lineNumber, columnNumber)
     {
         
     }

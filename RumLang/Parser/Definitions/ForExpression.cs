@@ -1,13 +1,14 @@
 namespace RumLang.Parser.Definitions;
 
-public class ForExpression : Expression
+public class ForExpression : Expression, IHasChildren
 {
     public Expression Start { get; }
     public Expression End { get; }
     public Expression Step { get; }
     public List<Expression> Body { get; }
 
-    public ForExpression(Expression start, Expression end, Expression step, List<Expression> body)
+    public ForExpression(Expression start, Expression end, Expression step, List<Expression> body, int lineNumber, int columnNumber) 
+        : base(lineNumber, columnNumber)
     {
         Start = start;
         End = end;
@@ -25,5 +26,14 @@ public class ForExpression : Expression
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Body: \n{string.Join("\n", Body.Select(expr => expr.GetStringRepresentation(depth + 1)))}");
 
         return sb.ToString();
+    }
+    
+    public List<List<AstNode>> GetChildren()
+    {
+        return new List<List<AstNode>>
+        {
+            new List<AstNode> { Start, End, Step },
+            Body.Cast<AstNode>().ToList()
+        };
     }
 }

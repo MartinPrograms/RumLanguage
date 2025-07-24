@@ -6,7 +6,8 @@ public class ImportExpression : Expression
 {
     public string Target { get; }
 
-    public ImportExpression(string target)
+    public ImportExpression(string target, int lineNumber, int columnNumber) 
+        : base(lineNumber, columnNumber)
     {
         Target = target;
     }

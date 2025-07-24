@@ -1,16 +1,17 @@
-// The standard library for RumLang
-// Import it using `import rum.std`
+// The standard io library for RumLang
+// Import it using `import rum.io`
 
 import c.stdio;
+import rum.text;
 
 namespace rum
 {
 
     namespace io
     {
-        public void printf(string format, ...){
-            c.stdio.printf(format, ...);
-        }
+        /*public void printf(rum.text.string format, ...){
+            c.stdio.printf(format.source, ...);
+        }*/
     }
 
 }

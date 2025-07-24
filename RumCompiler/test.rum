@@ -1,10 +1,39 @@
 // test.rum - A custom language! Using QBE as a backend.
-
+/*
 import rum.io;
 import rum.text;
+import c.stdio;
+import c.SDL3.SDL;
 
-// File local
-entrypoint void main()
+class banking_info
 {
-    rum.io.printf("Hello, World!\n");
+    private long balance;
+    private long account_number;
+    private rum.text.string account_holder;
+    public banking_info(long balance, long account_number, rum.text.string account_holder)
+    {
+        this.balance = balance;
+        this.account_number = account_number;
+        this.account_holder = account_holder;
+    }
 }
+
+int varargs(int x, int y, ...){
+    return x + y;
+}
+
+rum.text.string application_help(){
+    return "Hi this application is an analyzer test-bed!";
+}
+*/
+// File local
+entrypoint int main()
+{
+    int x = 5;
+    return x;
+}
+/*
+int test(int x, int y){
+    return x + y;
+}
+*/

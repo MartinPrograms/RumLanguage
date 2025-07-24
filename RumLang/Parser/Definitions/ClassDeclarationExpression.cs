@@ -21,7 +21,7 @@ public class test_class
    }
 }
  */
-public class ClassDeclarationExpression : Expression
+public class ClassDeclarationExpression : Expression, IHasChildren
 {
     public string ClassName { get; }
     public AccessModifier AccessModifier { get; }
@@ -29,7 +29,8 @@ public class ClassDeclarationExpression : Expression
     public List<ClassMemberDeclaration> Variables { get; }
     
     public ClassDeclarationExpression(string className, AccessModifier accessModifier,
-        List<FunctionDeclarationExpression> functions, List<ClassMemberDeclaration> variables)
+        List<FunctionDeclarationExpression> functions, List<ClassMemberDeclaration> variables, int lineNumber, int columnNumber) 
+        : base(lineNumber, columnNumber)
     {
         ClassName = className;
         AccessModifier = accessModifier;
@@ -57,5 +58,13 @@ public class ClassDeclarationExpression : Expression
         }
 
         return sb.ToString();
+    }
+    
+    public List<List<AstNode>> GetChildren()
+    {
+        List<AstNode> children = new();
+        children.AddRange(Functions);
+        children.AddRange(Variables);
+        return new List<List<AstNode>> { children };
     }
 }

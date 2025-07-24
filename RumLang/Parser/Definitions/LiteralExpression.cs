@@ -3,15 +3,17 @@ using RumLang.Tokenizer;
 
 namespace RumLang.Parser.Definitions;
 
-public class LiteralExpression : Expression
+public class LiteralExpression : Expression, IHasType
 {
     public string Value { get; }
-    public Literal Type { get; }
-
-    public LiteralExpression(string value, Literal type)
+    public Literal TypeLiteral { get; }
+    public Expression TypeExpression => this;
+    
+    public LiteralExpression(string value, Literal type, int lineNumber, int columnNumber) 
+        : base(lineNumber, columnNumber)
     {
         Value = value;
-        Type = type;
+        TypeLiteral = type;
     }
 
     public override string GetStringRepresentation(int depth = 0)
@@ -19,7 +21,7 @@ public class LiteralExpression : Expression
         StringBuilder sb = new();
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}LiteralExpression");
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Value: {Value}");
-        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Type: {Type.ToString()}");
+        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Type: {TypeLiteral.ToString()}");
 
         return sb.ToString();
     }

@@ -2,7 +2,8 @@ namespace RumLang.Parser.Definitions;
 
 public class BreakExpression : Expression
 {
-    public BreakExpression()
+    public BreakExpression(int lineNumber, int columnNumber) 
+    : base(lineNumber, columnNumber)
     {
     }
 

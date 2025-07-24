@@ -6,7 +6,8 @@ public class DestroyExpression : Expression
 {
     public string Identifier { get; }
 
-    public DestroyExpression(string identifier)
+    public DestroyExpression(string identifier, int lineNumber, int columnNumber) 
+        : base(lineNumber, columnNumber)
     {
         Identifier = identifier;
     }

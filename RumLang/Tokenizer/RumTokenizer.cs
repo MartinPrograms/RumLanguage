@@ -209,7 +209,7 @@ public class RumTokenizer : IDebugInfo
         }
 
         string number = _source[start.._position];
-        var literalType = hasDot ? Literal.Double : Literal.Int;
+        var literalType = hasDot ? Literal.Double : Literal.Long; // Later will be cast down to either int or float if specified
         _tokens.Add(new Token(literalType, number, _line, col));
     }
     

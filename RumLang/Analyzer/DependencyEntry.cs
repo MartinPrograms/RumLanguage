@@ -5,7 +5,7 @@ public class DependencyEntry
     public string FilePath { get; }
     public ExternalEntry ExternalEntry { get; }
     
-    public DependencyEntry(Rum rum, string filePath)
+    public DependencyEntry(Rum rum, string filePath, AnalyzerOptions options)
     {
         FilePath = filePath;
         
@@ -13,7 +13,7 @@ public class DependencyEntry
         if (System.IO.File.Exists(filePath))
         {
             // Assuming a method to deserialize the file into ExternalEntry
-            ExternalEntry = LoadExternalEntryFromFile(rum, filePath);
+            ExternalEntry = LoadExternalEntryFromFile(rum, filePath, options);
         }
         else
         {
@@ -21,8 +21,9 @@ public class DependencyEntry
         }
     }
 
-    public ExternalEntry LoadExternalEntryFromFile(Rum rum, string filePath)
+    public ExternalEntry LoadExternalEntryFromFile(Rum rum, string filePath, AnalyzerOptions options)
     {
-        return new ExternalEntry(rum,File.ReadAllText(filePath));
+        return new ExternalEntry(rum,File.ReadAllText(filePath), options);
+        
     }
 }

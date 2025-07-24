@@ -6,5 +6,6 @@ public enum RumError
     Error,
     TokenizerError,
     ParserError,
-    AnalysisError
+    AnalysisError,
+    CodeGenError
 }

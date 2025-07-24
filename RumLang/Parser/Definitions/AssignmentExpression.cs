@@ -5,12 +5,12 @@ namespace RumLang.Parser.Definitions;
 /// <summary>
 /// Sets LHS to RHS
 /// </summary>
-public class AssignmentExpression : Expression
+public class AssignmentExpression : Expression, IHasChildren
 {
     public Expression Lhs { get; }
     public Expression Rhs { get; }
 
-    public AssignmentExpression(Expression lhs, Expression rhs)
+    public AssignmentExpression(Expression lhs, Expression rhs, int lineNumber, int columnNumber) : base(lineNumber, columnNumber)
     {
         Lhs = lhs;
         Rhs = rhs;
@@ -24,5 +24,14 @@ public class AssignmentExpression : Expression
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Rhs: \n{Rhs.GetStringRepresentation(depth + 1)}");
 
         return sb.ToString();
+    }
+    
+    public List<List<AstNode>> GetChildren()
+    {
+        return new List<List<AstNode>>
+        {
+            new List<AstNode> { Lhs },
+            new List<AstNode> { Rhs }
+        };
     }
 }

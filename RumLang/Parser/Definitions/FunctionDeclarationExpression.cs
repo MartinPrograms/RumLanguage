@@ -2,16 +2,16 @@ using System.Text;
 
 namespace RumLang.Parser.Definitions;
 
-public class FunctionDeclarationExpression : Expression
+public class FunctionDeclarationExpression : Expression, IHasChildren
 {
     public string FunctionName { get; }
     
     /// <summary>
     /// Reused type, Value is repurposed as variable name.
     /// </summary>
-    public List<Expression> Arguments { get; }
+    public List<VariableDeclarationExpression> Arguments { get; }
     
-    public string ReturnType { get; }
+    public IHasType ReturnType { get; }
     
     public AccessModifier Access { get; }
     
@@ -23,8 +23,9 @@ public class FunctionDeclarationExpression : Expression
     
     public bool Export { get; }
 
-    public FunctionDeclarationExpression(string functionName, List<Expression> arguments, string returnType,
-        AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, bool isEntryPoint = false, bool export = false)
+    public FunctionDeclarationExpression(string functionName, List<VariableDeclarationExpression> arguments, IHasType returnType,
+        AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, int lineNumber, int columnNumber,bool isEntryPoint = false, bool export = false) 
+        : base(lineNumber, columnNumber)
     {
         FunctionName = functionName;
         Arguments = arguments;
@@ -48,7 +49,7 @@ public class FunctionDeclarationExpression : Expression
         if (Export)
             sb.Append(" (exported)");
         sb.AppendLine();
-        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Return Type: {ReturnType.ToString()}");
+        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Return Type: \n{((Expression)ReturnType).GetStringRepresentation(depth + 1)}");
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Access Modifier: {Access.ToString()}");
         var targetDepth = depth + 1;
         string isVarArg = IsVariadic ? "(variadic)" : string.Empty;
@@ -58,5 +59,25 @@ public class FunctionDeclarationExpression : Expression
             sb.Append(
                 $"{StringHelpers.Repeat("\t", depth)}:- Expressions \n{string.Join("\n", Expressions.Select(x => x.GetStringRepresentation(targetDepth)))}");
         return sb.ToString();
+    }
+    
+    public List<List<AstNode>> GetChildren()
+    {
+        List<List<AstNode>> children = new()
+        {
+            new List<AstNode> { (AstNode)ReturnType }
+        };
+        
+        if (Arguments.Count > 0)
+        {
+            children.Add(Arguments.Cast<AstNode>().ToList());
+        }
+        
+        if (Expressions.Count > 0)
+        {
+            children.Add(Expressions.Cast<AstNode>().ToList());
+        }
+        
+        return children;
     }
 }

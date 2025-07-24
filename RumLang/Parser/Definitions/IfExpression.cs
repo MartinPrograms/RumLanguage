@@ -10,13 +10,14 @@ namespace RumLang.Parser.Definitions;
 ///
 /// where else could lead into another if statement
 /// </summary>
-public class IfExpression : Expression
+public class IfExpression : Expression, IHasChildren
 {
     public Expression Condition { get; }
     public List<Expression> ThenBranch { get; }
     public List<Expression>? ElseBranch { get; }
     
-    public IfExpression(Expression condition, List<Expression> thenBranch, List<Expression>? elseBranch = null)
+    public IfExpression(Expression condition, List<Expression> thenBranch, int lineNumber, int columnNumber,List<Expression>? elseBranch = null) 
+        : base(lineNumber, columnNumber)
     {
         Condition = condition;
         ThenBranch = thenBranch;
@@ -35,5 +36,21 @@ public class IfExpression : Expression
             sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- ElseBranch: \n{string.Join("\n", ElseBranch.Select(x => x.GetStringRepresentation(depth + 1)))}");
         }
         return sb.ToString();
+    }
+    
+    public List<List<AstNode>> GetChildren()
+    {
+        var children = new List<List<AstNode>>
+        {
+            new List<AstNode> { Condition },
+            ThenBranch.Cast<AstNode>().ToList()
+        };
+
+        if (ElseBranch != null)
+        {
+            children.Add(ElseBranch.Cast<AstNode>().ToList());
+        }
+
+        return children;
     }
 }

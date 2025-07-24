@@ -2,7 +2,8 @@ namespace RumLang.Parser.Definitions;
 
 public class ContinueExpression : Expression
 {
-    public ContinueExpression()
+    public ContinueExpression(int lineNumber, int columnNumber) 
+    : base(lineNumber, columnNumber)
     {
     }
 

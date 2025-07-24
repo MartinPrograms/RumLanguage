@@ -2,13 +2,14 @@ using System.Text;
 
 namespace RumLang.Parser.Definitions;
 
-public class IdentifierExpression :Expression
+public class IdentifierExpression : Expression, IFlattenable
 {
-    public string Name { get; }
+    public string Identifier { get; }
 
-    public IdentifierExpression(string name)
+    public IdentifierExpression(string identifier, int lineNumber, int columnNumber) 
+        : base(lineNumber, columnNumber)
     {
-        Name = name;
+        Identifier = identifier;
     }
 
     public override string GetStringRepresentation(int depth = 0)
@@ -16,8 +17,13 @@ public class IdentifierExpression :Expression
         StringBuilder sb = new();
 
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}IdentifierExpression");
-        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Name: {Name}");
+        sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}:- Name: {Identifier}");
 
         return sb.ToString();
+    }
+    
+    public string Flatten()
+    {
+        return Identifier;
     }
 }

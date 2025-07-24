@@ -2,10 +2,23 @@ namespace rum
 {
     namespace text
     {
+    /*
         class string
         {
             public long length;
             public pointer source;
+            
+            public rum.text.string(long length, pointer source)
+            {
+                this.length = length;
+                this.source = source;
+            }
         }
+        
+        public rum.text.string testing()
+        {
+            return new rum.text.string(7, "RumLang Testing");
+        }
+        */
     }
 }

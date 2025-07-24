@@ -110,7 +110,7 @@ public class RumParser : IDebugInfo
                         Advance();
                     }
 
-                    _nodes.Add(new ImportExpression(sb.ToString()));
+                    _nodes.Add(new ImportExpression(sb.ToString(), GetLineNumber(), GetColumnNumber()));
 
                     continue;
                 }
@@ -137,7 +137,7 @@ public class RumParser : IDebugInfo
                     
                     var namespaceName = Peek()!.Value;
                     var nodes = new List<AstNode>();
-                    _currentNodes.Add(new NamespaceDeclarationExpression(namespaceName, nodes, accessModifier));
+                    _currentNodes.Add(new NamespaceDeclarationExpression(namespaceName, nodes, GetLineNumber(), GetColumnNumber(), accessModifier));
                     _currentNodes = nodes;
                     _namespaces.Push((namespaceName, nodes));
                     Advance();
@@ -179,8 +179,9 @@ public class RumParser : IDebugInfo
 
                     while (!Match(Punctuation.RightBrace))
                     {
-                        bool hasAccessModifier = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Private ||
-                                                 Peek()!.Keyword == Keyword.Internal || Peek()!.Keyword == Keyword.Public;
+                        bool hasAccessModifier =
+                            Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Private ||
+                            Peek()!.Keyword == Keyword.Internal || Peek()!.Keyword == Keyword.Public;
                         AccessModifier memberAccessModifier = AccessModifier.Private; // Default to private
                         if (hasAccessModifier)
                         {
@@ -191,12 +192,15 @@ public class RumParser : IDebugInfo
 
                             Advance();
                         }
-                        
+
                         if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Export)
-                            throw new Exception("The \"export\" keyword is only allowed on top-level or namespace-scoped functions. Class member functions cannot be exported directly.");
-                        
+                            throw new Exception(
+                                "The \"export\" keyword is only allowed on top-level or namespace-scoped functions. Class member functions cannot be exported directly.");
+                        var type = GetMemberedType();
+
                         // Check if it is a constructor by checking if the next token is a left parenthesis.
-                        if (Peek()!.Type == TokenType.Identifier && Peek()!.Value == className && Peek(1)!.Type == TokenType.Punctuation &&
+                        if (Peek()!.Value == className &&
+                            Peek(1)!.Type == TokenType.Punctuation &&
                             Peek(1)!.Punctuation == Punctuation.LeftParenthesis)
                         {
                             // This *is* a constructor!
@@ -209,58 +213,58 @@ public class RumParser : IDebugInfo
                                 throw new Exception("Expected \"{\" after constructor definition!");
 
                             var codeblock = ParseCodeBlock();
-                            constructor = new FunctionDeclarationExpression(className, arguments, className,
-                                accessModifier, codeblock, isVariadic);
+                            constructor = new FunctionDeclarationExpression(className, arguments,
+                                type,
+                                accessModifier, codeblock, isVariadic,GetLineNumber(), GetColumnNumber());
                             continue;
                         }
 
-                        if (Peek()!.Type == TokenType.Identifier && Peek(1)!.Type == TokenType.Identifier)
+                        var name = Peek(1)!.Value;
+                        if (type is not IHasType)
+                            throw new Exception($"Expected a type for member \"{name}\" at {GetLineNumber()}:{GetColumnNumber()}");
+                        Advance();
+                        Advance();
+                        bool isFunction = Peek()!.Type == TokenType.Punctuation &&
+                                          Peek()!.Punctuation == Punctuation.LeftParenthesis;
+                        bool isVariable = Peek()!.Type == TokenType.Punctuation &&
+                                          Peek()!.Punctuation == Punctuation.Semicolon;
+
+                        if (!isFunction && !isVariable)
+                            throw new Exception($"Expected punctuation, \"(\" or \";\" after declaration at {Peek()}");
+
+                        if (isVariable)
                         {
-                            // This is a variable declaration or function declaration.
-                            var type = Peek()!.Value;
-                            var name = Peek(1)!.Value;
+                            variables.Add(new ClassMemberDeclaration(name, (IHasType)type, memberAccessModifier, GetLineNumber(), GetColumnNumber()));
                             Advance();
-                            Advance();
-                            bool isFunction = Peek()!.Type == TokenType.Punctuation &&
-                                              Peek()!.Punctuation == Punctuation.LeftParenthesis;
-                            bool isVariable = Peek()!.Type == TokenType.Punctuation &&
-                                              Peek()!.Punctuation == Punctuation.Semicolon;
-                            
-                            if (!isFunction && !isVariable)
-                                throw new Exception($"Expected punctuation, \"(\" or \";\" after declaration at {Peek()}");
-                            
-                            if (isVariable)
+                            continue;
+                        }
+
+                        if (isFunction)
+                        {
+                            Advance(); // Now in argument space.
+                            var isVariadic = false;
+                            var arguments = GetArguments(ref isVariadic);
+                            if (Match(Punctuation.Semicolon))
                             {
-                                variables.Add(new ClassMemberDeclaration(name, type, memberAccessModifier));
-                                Advance();
+                                _currentNodes.Add(new FunctionDeclarationExpression(name, arguments, type,
+                                    accessModifier,
+                                    new(), isVariadic, GetLineNumber(), GetColumnNumber(), false));
                                 continue;
                             }
 
-                            if (isFunction)
-                            {
-                                Advance(); // Now in argument space.
-                                var isVariadic = false;
-                                var arguments = GetArguments(ref isVariadic);
-                                if (Match(Punctuation.Semicolon))
-                                {
-                                    _currentNodes.Add(new FunctionDeclarationExpression(name, arguments, type,
-                                        accessModifier,
-                                        new (),isVariadic,false));
-                                    continue;
-                                }
-                                
-                                Advance(); // Consume the {
-                                var expressions = ParseCodeBlock(); // Also consumes the }
-                                functions.Add(new FunctionDeclarationExpression(name, arguments, type, memberAccessModifier, expressions, isVariadic, false));
-                                continue;
-                            }
+                            Advance(); // Consume the {
+                            var expressions = ParseCodeBlock(); // Also consumes the }
+                            functions.Add(new FunctionDeclarationExpression(name, arguments, type,
+                                memberAccessModifier, expressions, isVariadic, GetLineNumber(), GetColumnNumber(), false));
+                            continue;
+
                         }
                     }
-                    
+
                     // Now we can create the class itself
                     if (constructor != null)
                         functions.Add(constructor);
-                    _currentNodes.Add(new ClassDeclarationExpression(className, accessModifier, functions, variables));
+                    _currentNodes.Add(new ClassDeclarationExpression(className, accessModifier, functions, variables, GetLineNumber(), GetColumnNumber()));
                     _isInClass = false;
                     continue;
                 }
@@ -296,7 +300,7 @@ public class RumParser : IDebugInfo
                         Advance();
                     }
 
-                    var functionType = Peek()!.Value;
+                    var functionType = GetMemberedType();
                     var functionName = Peek(1)!.Value;
 
                     Advance();
@@ -319,14 +323,14 @@ public class RumParser : IDebugInfo
 
                         _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType,
                             accessModifier,
-                            new (),isVariadic,false, false));
+                            new (),isVariadic,GetLineNumber(), GetColumnNumber(), false, false));
                         continue;
                     }
 
                     // Handle code block.
                     Advance(); // Consume the {
                     var expressions = ParseCodeBlock(); // Also consumes the }
-                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isVariadic, isEntryPoint, isExported || isEntryPoint));
+                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isVariadic, GetLineNumber(), GetColumnNumber(), isEntryPoint, isExported || isEntryPoint));
                     continue;
                 }
 
@@ -344,6 +348,41 @@ public class RumParser : IDebugInfo
         return new ParserResult(ParserError.Success, _nodes, null);
     }
 
+    private int GetLineNumber()
+    {
+        if (Peek() == null)
+            return -1;
+        return Peek()!.Line;
+    }
+    
+    private int GetColumnNumber()
+    {
+        if (Peek() == null)
+            return -1;
+        return Peek()!.Column;
+    }
+
+    private IHasType GetMemberedType()
+    {
+        Expression type = null!;
+        if (Peek()!.Type == TokenType.Identifier)
+        {
+            // Most likely the type identifier, 
+            type = new LiteralTypeExpression(Peek()!.Value, GetLineNumber(), GetColumnNumber());
+        }
+        while (Peek(1)!.Type == TokenType.Operator &&
+               Peek(1)!.Operator == Operator.MemberAccess)
+        {
+            Advance(); 
+            type = new MemberAccessExpression(type, Peek(1)!.Value, GetLineNumber(), GetColumnNumber());
+            Advance();
+        }
+
+
+        
+        return (IHasType) type;
+    }
+
     private bool IsNamespaceStart()
     {
         // Check if an access modifier is present.
@@ -359,9 +398,9 @@ public class RumParser : IDebugInfo
         return true;
     }
 
-    private List<Expression> GetArguments(ref bool isVariadic)
+    private List<VariableDeclarationExpression> GetArguments(ref bool isVariadic)
     {
-        List<Expression> arguments = new List<Expression>();
+        List<VariableDeclarationExpression> arguments = new List<VariableDeclarationExpression>();
 
         if (Peek()!.Type == TokenType.Punctuation && Peek()!.Punctuation == Punctuation.RightParenthesis)
         {
@@ -379,8 +418,12 @@ public class RumParser : IDebugInfo
                 }
                 else
                 {
-                    var argType = Peek()!.Value;
+                    var argType = GetMemberedType();
                     var argName = Peek(1)!.Value;
+                    
+                    if (argType is not IHasType)
+                        throw new Exception($"Expected a type for argument \"{argName}\" at {GetLineNumber()}:{GetColumnNumber()}");
+                    
                     var isCommaOrEnd = Peek(2)!.Type == TokenType.Punctuation &&
                                        Peek(2)!.Punctuation == Punctuation.Comma ||
                                        Peek(2)!.Punctuation == Punctuation.RightParenthesis;
@@ -391,7 +434,7 @@ public class RumParser : IDebugInfo
                         throw new Exception("Argument missing closing ) or , seperator");
                     }
 
-                    arguments.Add(new VariableDeclarationExpression(argName, argType));
+                    arguments.Add(new VariableDeclarationExpression(argName, (IHasType)argType, GetLineNumber(), GetColumnNumber()));
                     Advance();
                     Advance();
                     if (Peek()!.Punctuation == Punctuation.RightParenthesis)
@@ -433,15 +476,17 @@ public class RumParser : IDebugInfo
             
             if (IsVariableDeclaration())
             {
-                var varType = Peek()!.Value;
+                var varType = GetMemberedType();
                 var varName = Peek(1)!.Value;
+                if (varType is not IHasType)
+                    throw new Exception($"Expected a type for variable \"{varName}\" at {GetLineNumber()}:{GetColumnNumber()}");
 
                 Advance();
                 Advance();
 
                 if (Match(Punctuation.Semicolon))
                 {
-                    expressions.Add(new VariableDeclarationExpression(varName, varType));
+                    expressions.Add(new VariableDeclarationExpression(varName, (IHasType)varType, GetLineNumber(), GetColumnNumber()));
                     continue;
                 }
 
@@ -455,8 +500,8 @@ public class RumParser : IDebugInfo
                 
                 // Get the rhs
                 var rhs = ParseExpression();
-                var lhs = new VariableDeclarationExpression(varName, varType);
-                expressions.Add(new AssignmentExpression(lhs, rhs));
+                var lhs = new VariableDeclarationExpression(varName, (IHasType)varType, GetLineNumber(), GetColumnNumber());
+                expressions.Add(new AssignmentExpression(lhs, rhs, GetLineNumber(), GetColumnNumber()));
                 if (!Match(Punctuation.Semicolon))
                 {
                     throw new Exception("Expected \";\" at the end of expression!");
@@ -470,7 +515,7 @@ public class RumParser : IDebugInfo
                 var returnExpr = ParseExpression();
                 if (!Match(Punctuation.Semicolon))
                     throw new Exception("Expected \";\" after return expression.");
-                expressions.Add(new ReturnExpression(returnExpr));
+                expressions.Add(new ReturnExpression(returnExpr, GetLineNumber(), GetColumnNumber()));
                 continue;
             }
 
@@ -500,7 +545,7 @@ public class RumParser : IDebugInfo
                 if (!Match(Punctuation.LeftBrace))
                     throw new Exception("Expected \"{\" after \"while\" condition.");
                 var body = ParseCodeBlock();
-                expressions.Add(new WhileExpression(condition, body));
+                expressions.Add(new WhileExpression(condition, body, GetLineNumber(), GetColumnNumber()));
                 continue;
             }
             if (Match(Keyword.For))
@@ -520,7 +565,7 @@ public class RumParser : IDebugInfo
                     throw new Exception("Expected \"{\" after for loop.");
 
                 var body = ParseCodeBlock();
-                expressions.Add(new ForExpression(initializer, condition, increment, body));
+                expressions.Add(new ForExpression(initializer, condition, increment, body, GetLineNumber(), GetColumnNumber()));
                 continue;
             }
             if (Match(Keyword.Do))
@@ -538,7 +583,7 @@ public class RumParser : IDebugInfo
                 if (!Match(Punctuation.Semicolon))
                     throw new Exception("Expected \";\" after \"while\" condition.");
                 
-                expressions.Add(new DoWhileExpression(condition, body));
+                expressions.Add(new DoWhileExpression(condition, body, GetLineNumber(), GetColumnNumber()));
                 continue;
             }
             
@@ -588,7 +633,8 @@ public class RumParser : IDebugInfo
             }
         }
 
-        return new IfExpression(condition, ifBlock, elseBlock);    }
+        return new IfExpression(condition, ifBlock, GetLineNumber(), GetColumnNumber(), elseBlock);
+    }
 
     private Expression ParseExpression(float parentPrecedence = 0.0f)
     {
@@ -599,16 +645,33 @@ public class RumParser : IDebugInfo
             var op = Peek()!.Operator!.Value;
             Advance();
             var operand = ParseExpression();
-            return new UnaryExpression(op, operand, isPostfix: false);
+            return new UnaryExpression(op, operand, false, GetLineNumber(), GetColumnNumber());
         }
 
         left = ParsePrimary();
 
+        if (Peek()!.Type == TokenType.Identifier)
+        {
+            // We are probably looking at a variable or function call.
+            var identifier = Peek()!.Value;
+            Advance();
+            // Check if it is an equals sign or a semicolon.
+            if (Match(Operator.Assignment))
+            {
+                // This is an assignment.
+                var right = ParseExpression();
+                
+                if (left is not IHasType)
+                    throw new Exception($"Expected a type for variable \"{identifier}\" at {GetLineNumber()}:{GetColumnNumber()}");
+                left = new AssignmentExpression(new VariableDeclarationExpression(identifier, (IHasType)left, GetLineNumber(), GetColumnNumber()), right, GetLineNumber(), GetColumnNumber());
+            }
+        }
+        
         while (Peek()!.Type == TokenType.Operator && IsPostfixUnary(Peek()!.Operator!.Value))
         {
             var op = Peek()!.Operator!.Value;
             Advance();
-            left = new UnaryExpression(op, left, isPostfix: true);
+            left = new UnaryExpression(op, left, true, GetLineNumber(), GetColumnNumber());
         }
             
         while (Peek()!.Type == TokenType.Operator && PrecedenceMap.TryGetValue(Peek()!.Operator!.Value, out var precedence))
@@ -622,11 +685,11 @@ public class RumParser : IDebugInfo
             var right = ParseExpression(precedence.RightPrecedence);
             if (op == Operator.Assignment)
             {
-                left = new AssignmentExpression(left, right);
+                left = new AssignmentExpression(left, right, GetLineNumber(), GetColumnNumber());
             }
             else
             {
-                left = new BinaryExpression(left, op, right);
+                left = new BinaryExpression(left, op, right, GetLineNumber(), GetColumnNumber());
             }
         }
 
@@ -649,19 +712,19 @@ public class RumParser : IDebugInfo
         else if (token.Type == TokenType.Literal)
         {
             Advance();
-            expr = new LiteralExpression(token.Value, token.Literal!.Value);
+            expr = new LiteralExpression(token.Value, token.Literal!.Value, GetLineNumber(), GetColumnNumber());
         }
         else if (token.Type == TokenType.Identifier)
         {
             Advance();
-            expr = new IdentifierExpression(token.Value);
+            expr = new IdentifierExpression(token.Value, GetLineNumber(), GetColumnNumber());
         }
         else if (token.Type == TokenType.Keyword && token.Keyword == Keyword.New)
         {
             Advance(); // Consume the "new" keyword
             if (Peek()!.Type != TokenType.Identifier)
                 throw new Exception($"Expected type identifier after \"new\" at {Peek()!.Line}:{Peek()!.Column}");
-            var typeName = Peek()!.Value;
+            var typeName = GetMemberedType();
             Advance(); // Consume the type identifier
 
             if (!Match(Punctuation.LeftParenthesis))
@@ -679,7 +742,9 @@ public class RumParser : IDebugInfo
             if (!Match(Punctuation.RightParenthesis))
                 throw new Exception("Expected \")\" after constructor arguments");
 
-            expr = new NewExpression(typeName, args);
+            if (typeName is not IHasType)
+                throw new Exception($"Expected a type for \"new {typeName}\" at {GetLineNumber()}:{GetColumnNumber()}");
+            expr = new NewExpression((IHasType)typeName, args, GetLineNumber(), GetColumnNumber());
         }
         else if (token.Type == TokenType.Keyword && token.Keyword == Keyword.Destroy)
         {
@@ -689,39 +754,39 @@ public class RumParser : IDebugInfo
             var identifier = Peek()!.Value;
             Advance(); // Consume the identifier
             
-            expr = new DestroyExpression(identifier);
+            expr = new DestroyExpression(identifier, GetLineNumber(), GetColumnNumber());
         }
         else if (token.Type == TokenType.Keyword && token.Keyword == Keyword.Null)
         {
             Advance();
-            expr = new LiteralExpression("null", Literal.Null);
+            expr = new LiteralExpression("null", Literal.Null, GetLineNumber(), GetColumnNumber());
         }
         else if (Match(Keyword.True))
         {
-            expr = new LiteralExpression("1", Literal.Int); // TODO: Maybe use a better representation for booleans?
+            expr = new LiteralExpression("1", Literal.Int, GetLineNumber(), GetColumnNumber()); // TODO: Maybe use a better representation for booleans?
         }
         else if (Match(Keyword.False))
         {
-            expr = new LiteralExpression("0", Literal.Int);
+            expr = new LiteralExpression("0", Literal.Int, GetLineNumber(), GetColumnNumber()); // TODO: Maybe use a better representation for booleans?
         }
         else if (Match(Keyword.Continue))
         {
-            expr = new ContinueExpression();
+            expr = new ContinueExpression(GetLineNumber(), GetColumnNumber());
         }
         else if (Match(Operator.Variadic))
         {
-            expr = new VariadicExpression();
+            expr = new VariadicExpression(GetLineNumber(), GetColumnNumber());
         }
         else if (Match(Keyword.Break))
         {
-            expr = new BreakExpression();
+            expr = new BreakExpression(GetLineNumber(), GetColumnNumber());
         }
         else if (Match(Keyword.This))
         {
             // This is a reference to the current instance in a class.
             if (!_isInClass)
                 throw new Exception("The \"this\" keyword can only be used within a class scope.");
-            expr = new ThisExpression();
+            expr = new ThisExpression(GetLineNumber(), GetColumnNumber());
         }
         else
         {
@@ -740,7 +805,7 @@ public class RumParser : IDebugInfo
                     throw new Exception("Expected identifier after \".\"");
 
                 Advance(); // consume identifier
-                expr = new MemberAccessExpression(expr, memberToken.Value);
+                expr = new MemberAccessExpression(expr, memberToken.Value, GetLineNumber(), GetColumnNumber());
             }
             else if (Peek()!.Type == TokenType.Punctuation && Peek()!.Punctuation == Punctuation.LeftParenthesis)
             {
@@ -758,7 +823,7 @@ public class RumParser : IDebugInfo
                 if (!Match(Punctuation.RightParenthesis))
                     throw new Exception("Expected \")\" after function call arguments");
 
-                expr = new FunctionCallExpression(expr, args); // Updated to take an expression target
+                expr = new FunctionCallExpression(expr, args, GetLineNumber(), GetColumnNumber()); // Updated to take an expression target
             }
             else
             {
@@ -813,12 +878,14 @@ public class RumParser : IDebugInfo
         }
 
         // Check if the current type && next identifier exists.
-        bool hasTypeAndIdentifier = false;
-        if (Peek()!.Type == TokenType.Identifier && Peek(1)!.Type == TokenType.Identifier)
+        var type = GetMemberedType();
+        Advance();
+        bool hasTypeAndIdentifier = Peek()!.Type == TokenType.Identifier && type is IHasType;
+        Advance();
+        if (!hasTypeAndIdentifier)
         {
-            hasTypeAndIdentifier = true;
-            Advance(); // Consume type
-            Advance(); // Consume identifier
+            _position = oldPosition;
+            return false;
         }
         
 

@@ -1,10 +1,11 @@
 namespace RumLang.Parser.Definitions;
 
-public class ReturnExpression : Expression
+public class ReturnExpression : Expression, IHasChildren
 {
     public Expression? Value { get; }
 
-    public ReturnExpression(Expression? value)
+    public ReturnExpression(Expression? value, int lineNumber, int columnNumber) 
+        : base(lineNumber, columnNumber)
     {
         Value = value;
     }
@@ -23,5 +24,13 @@ public class ReturnExpression : Expression
         }
 
         return sb.ToString();
+    }
+
+    public List<List<AstNode>> GetChildren()
+    {
+        return new List<List<AstNode>>
+        {
+            Value != null ? new List<AstNode> { Value } : new List<AstNode>()
+        };
     }
 }
