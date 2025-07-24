@@ -116,11 +116,39 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
             
             case FunctionCallExpression functionCall:
                 return ConvertFunctionCallExpression(functionCall, targetType)!; 
+            
+            case UnaryExpression unaryExpression:
+                return ConvertUnaryExpression(unaryExpression, targetType);
 
             // Extend this with function calls, casting, logical ops, etc.
 
             default:
                 throw new NotSupportedException($"Expression type {expr.GetType().Name} not supported.");
+        }
+    }
+
+    private IQbeRef ConvertUnaryExpression(UnaryExpression unaryExpression, IQbeTypeDefinition? targetType)
+    {
+        var value = EvaluateExpression(unaryExpression.Value, targetType);
+        if (value is not QbeValue qbeValue)
+        {
+            throw new InvalidOperationException($"Unary operation on non-QbeValue type {value.GetType().Name} is not supported.");
+        }
+
+        switch (unaryExpression.Operator)
+        {
+            case Operator.Plus:
+                return qbeValue; // Unary plus does nothing.
+            case Operator.Minus:
+                return CurrentBlock!.Negate(qbeValue);
+            case Operator.Asterisk:
+                if (qbeValue.PrimitiveEnum is QbePrimitive primitive && primitive.PrimitiveEnum == QbePrimitiveEnum.Pointer)
+                {
+                    return CurrentBlock!.Load(primitive, value);
+                }
+                throw new InvalidOperationException("Dereferencing only works with pointers.");
+            default:
+                throw new NotSupportedException($"Unary operation {unaryExpression.Operator} is not supported.");
         }
     }
 
@@ -262,6 +290,56 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
             variableName = decl.Identifier;
             if (!GetVariable(variableName, out _))
                 throw new KeyNotFoundException($"Variable \"{variableName}\" not found after declaration.");
+        }
+        else if (assignment.Lhs is UnaryExpression unary)
+        {
+            // Check if it is a dereference operation
+            if (unary.Operator == Operator.Asterisk && unary.Value is IdentifierExpression idExpr)
+            {
+                // Special case, we need to dereference the identifier. We can NOT use the identifier directly.
+                variableName = idExpr.Identifier;
+                
+                if (!GetVariable(variableName, out var variable))
+                    throw new KeyNotFoundException($"Variable \"{variableName}\" not found for dereferencing.");
+                if (variable is not QbeLocalRef localRef)
+                {
+                    throw new InvalidOperationException(
+                        $"Variable \"{variableName}\" is not a local reference and cannot be dereferenced.");
+                }
+                
+                // We need to dereference the variable, so we will use the pointer to the variable.
+                if (localRef.PrimitiveEnum is not QbePrimitive primitive)
+                {
+                    throw new InvalidOperationException(
+                        $"Variable \"{variableName}\" is not a pointer and cannot be dereferenced.");
+                }
+
+                if (primitive.PrimitiveEnum != QbePrimitiveEnum.Pointer)
+                {
+                    throw new InvalidOperationException(
+                        $"Variable \"{variableName}\" is not a pointer type, cannot dereference.");
+                }
+                
+                // evaluate the right-hand side expression.
+                var toStore = EvaluateExpression(assignment.Rhs, primitive);
+                if (toStore is not QbeValue valueToStore)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot assign value of type {toStore.GetType().Name} to variable \"{variableName}\".");
+                }
+                
+                CurrentBlock!.Store((QbeValue)variable, valueToStore);
+                return; // We are done with the dereference assignment.
+            }
+            else if (unary.Operator == Operator.Asterisk && unary.Value is UnaryExpression subUnary)
+            {
+                throw new NotSupportedException(
+                    $"Dereferencing a unary expression is not supported in assignment. Expression: {subUnary.GetStringRepresentation()}");
+            }
+            else
+            {
+                throw new NotSupportedException($"Unary operation {unary.Operator} is not supported in assignment.");
+            }
         }
         else
         {

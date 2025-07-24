@@ -423,6 +423,24 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
             var flattenedIdentifier = new IdentifierExpression(access.Flatten(), access.LineNumber, access.ColumnNumber);
             AnalyzeIdentifier(flattenedIdentifier);
         }
+        else if (assignment.Lhs is UnaryExpression unary)
+        {
+            // Unary expressions (for example *x, or &x) are valid as long as they are identifiers.
+            // Check if the unary expression is an identifier or another unary expression.
+            if (unary.Value is IdentifierExpression unaryIdentifier)
+            {
+                AnalyzeIdentifier(unaryIdentifier);
+            }
+            else if (unary.Value is UnaryExpression unaryValue)
+            {
+                // If it's another unary expression, we can recursively analyze it.
+                AnalyzeNode(unaryValue);
+            }
+            else
+            {
+                results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Left-hand side of assignment must be an identifier at line {assignment.LineNumber}, column {assignment.ColumnNumber}. Got {unary.Value.GetType().Name} instead."));
+            }
+        }
         else
         {
             results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Left-hand side of assignment must be an identifier at line {assignment.LineNumber}, column {assignment.ColumnNumber}. Got {assignment.Lhs.GetType().Name} instead."));

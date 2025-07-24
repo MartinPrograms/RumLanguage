@@ -92,6 +92,12 @@ public class AnalyzerType
         {
             return toType;
         }
+        
+        // Pointers can be both int or long, depending on the architecture. But we do not decide the architecture here, so we just return the original type.
+        if (type == QbePrimitive.Pointer && (toType == QbePrimitive.Int32 || toType == QbePrimitive.Int64))
+        {
+            return toType; // Return the pointer type as it can be cast to either int or long.
+        }
 
         return type; // If no implicit cast is possible, return the original type.
     }

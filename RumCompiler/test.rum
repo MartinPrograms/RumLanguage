@@ -43,9 +43,13 @@ entrypoint int main()
     // Create an array of 10 long integers
     pointer arr = create_array(10 * 8); // A long is 8 bytes
     
-    ***arr = 10;
-    //int a = 0;
-    //a++;
-    
+    *arr = 10;
+    arr = arr + 8;
+    *arr = 20;
+    arr = arr - 8;
+    c.printf("First element: %ld\n", *arr);
+    arr = arr + 8; // Move to the second element
+    c.printf("Second element: %ld\n", *arr);
+  
     return 0;
 }
