@@ -3,7 +3,7 @@ using RumLang.Tokenizer;
 
 namespace RumLang.Parser.Definitions;
 
-public class LiteralTypeExpression : Expression, IHasType, IFlattenable
+public class LiteralTypeExpression : Expression, IFlattenable, IHasType
 {
     public Literal TypeLiteral { get; }
     public Expression TypeExpression { get; }

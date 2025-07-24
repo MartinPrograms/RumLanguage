@@ -1,3 +1,4 @@
+using QbeGenerator;
 using RumLang.Parser.Definitions;
 using RumLang.Tokenizer;
 
@@ -54,6 +55,42 @@ public class AnalyzerType
         if (type == Literal.String)
         {
             throw new InvalidOperationException("Cannot implicitly cast string to another type.");
+        }
+
+        return type; // If no implicit cast is possible, return the original type.
+    }
+    
+    public static QbePrimitive ImplicitCast(IQbeTypeDefinition typeDef, IQbeTypeDefinition toTypeDef)
+    {
+        if (typeDef is not QbePrimitive type || toTypeDef is not QbePrimitive toType)
+        {
+            throw new ArgumentException("Both types must be QbePrimitive types for implicit casting.");
+        }
+        
+        if (type == toType)
+        {
+            return type;
+        }
+        
+        // Integers can be implicitly cast to long, float, and double.
+        // Long can be implicitly cast to int, float, and double.
+        // Floats can be implicitly cast to double.
+        // Doubles can be implicitly cast to float.
+        if (type == QbePrimitive.Int32 && (toType == QbePrimitive.Int64 || toType == QbePrimitive.Float || toType == QbePrimitive.Double))
+        {
+            return toType;
+        }
+        if (type == QbePrimitive.Int64 && (toType == QbePrimitive.Int32 || toType == QbePrimitive.Float || toType == QbePrimitive.Double))
+        {
+            return toType;
+        }
+        if (type == QbePrimitive.Float && toType == QbePrimitive.Double)
+        {
+            return toType;
+        }
+        if (type == QbePrimitive.Double && toType == QbePrimitive.Float)
+        {
+            return toType;
         }
 
         return type; // If no implicit cast is possible, return the original type.

@@ -1,4 +1,6 @@
+using System.Globalization;
 using QbeGenerator;
+using QuickGraph.Collections;
 using RumLang.Analyzer;
 using RumLang.Parser;
 using RumLang.Parser.Definitions;
@@ -12,6 +14,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
     Dictionary<string, (AnalyzerType, QbeType)> _types, 
     Dictionary<QbeType, List<QbeFunction>> _functions, 
     List<QbeFunction> _globalFunctions, 
+    AnalyzerOptions options,
     bool is32Bit = false)
 {
     public void ConvertExpressionToQbe(Expression expr)
@@ -32,6 +35,9 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
             case ReturnExpression returnExpresion:
                 ConvertReturnExpression(returnExpresion);
                 break;
+            case FunctionCallExpression functionCall:
+                ConvertFunctionCallExpression(functionCall);
+                break;
             default:
                 // Handle other expression types here
                 // For example, if you have a LiteralExpression, IdentifierExpression, etc.
@@ -41,163 +47,232 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
         }
     }
 
-    private void ConvertReturnExpression(ReturnExpression returnExpresion)
+    private IQbeRef? ConvertFunctionCallExpression(FunctionCallExpression functionCall, IQbeTypeDefinition? lhsType = null)
     {
-        var expression = returnExpresion.Value;
-        if (expression == null)
+        var name = ((IFlattenable)functionCall.FunctionTarget).Flatten();
+        var function = GetFunction(name);
+        if (function == null)
         {
-            CurrentBlock!.Return();
+            throw new KeyNotFoundException($"Function \"{name}\" not found.");
         }
-        else if (expression is LiteralExpression literal)
+        
+        var type = GetFunctionReturnType(name,out bool isCfunction, lhsType);
+        var refs = functionCall.Arguments.Select(x => EvaluateExpression(x)).ToList();
+        var temp = new List<IQbeRef>();
+
+        if (!isCfunction)
         {
-            var qbeType = CodeGenHelpers.QbeGetLiteralType(literal.TypeLiteral);
-            if (qbeType.IsFloat())
+            // For each argument, we need to ensure it matches the expected type.
+            var expectedArgs = _globalFunctions.FirstOrDefault(f => f.Identifier == function)?.Arguments;
+            if (expectedArgs == null)
             {
-                double parsedValue = double.Parse(literal.Value);
-                var literalValue = new QbeLiteral(qbeType, parsedValue);
-                CurrentBlock!.Return(CurrentBlock!.Copy(literalValue));
+                throw new KeyNotFoundException($"Function \"{function}\" not found in global functions.");
             }
-            else if (qbeType.IsInteger())
+            
+            if (expectedArgs.Count != refs.Count())
             {
-                long parsedValue = long.Parse(literal.Value);
-                var literalValue = new QbeLiteral(qbeType, parsedValue);
-                CurrentBlock!.Return(CurrentBlock!.Copy(literalValue));
+                throw new ArgumentException($"Function \"{function}\" expects {expectedArgs.Count} arguments, but got {refs.Count()}.");
             }
-            else
+            
+            foreach (var (arg, expected) in refs.Zip(expectedArgs, (r, e) => (r, e)))
             {
-                throw new NotSupportedException($"Literal type {qbeType} is not supported for return.");
+                QbeValue qbeArg = (QbeValue)arg;
+                if (((QbeValue)arg).PrimitiveEnum != expected.Primitive)
+                {
+                    // Try to implicitly cast the argument to the expected type
+                    var casted = AnalyzerType.ImplicitCast(((QbeValue)arg).PrimitiveEnum, expected.Primitive);
+                    if (casted != expected.Primitive)
+                    {
+                        throw new InvalidOperationException(
+                            $"Cannot implicitly cast {((QbeValue)arg).PrimitiveEnum} to {expected.Primitive} for function {function}.");
+                    }
+                    qbeArg.PrimitiveEnum = expected.Primitive;
+                }
+                
+                temp.Add((qbeArg));
             }
+            
+            refs = temp;
         }
-        else if (expression is IdentifierExpression identifier)
+        
+        var args = refs.ToArray().Select(x => ((QbeValue)x)).ToArray();
+
+        return CurrentBlock!.Call(function, type, args);
+    }
+    
+    private IQbeRef EvaluateExpression(Expression expr, IQbeTypeDefinition? targetType = null)
+    {
+        switch (expr)
         {
-            // Check if the identifier exists in the current block\"s variables, or in the global scope
-            if (_blockStack.Peek().variables.TryGetValue(identifier.Identifier, out var variable))
-            {
-                CurrentBlock!.Return((QbeValue)variable);
-            }
-            else
-            {
-                // If the variable does not exist, we can throw an error or handle it accordingly
-                throw new KeyNotFoundException($"Variable \"{identifier.Identifier}\" not found in current block.");
-            }
-        }
-        else
-        {
-            throw new NotSupportedException($"Return of type {expression.GetType().Name} is not supported in this context.");
+            case LiteralExpression literal:
+                return CreateLiteral(literal, targetType);
+
+            case IdentifierExpression identifier:
+                return GetVariable(identifier);
+
+            case BinaryExpression binary:
+                return ConvertBinaryExpression(binary);
+            
+            case FunctionCallExpression functionCall:
+                return ConvertFunctionCallExpression(functionCall, targetType)!; 
+
+            // Extend this with function calls, casting, logical ops, etc.
+
+            default:
+                throw new NotSupportedException($"Expression type {expr.GetType().Name} not supported.");
         }
     }
 
+    private IQbeRef ConvertBinaryExpression(BinaryExpression binary)
+    {
+        var left = (QbeValue)EvaluateExpression(binary.Lhs);
+        var right = (QbeValue)EvaluateExpression(binary.Rhs, left.PrimitiveEnum); // For C function calls, we will assume the type is correct. :p
+
+        var type = left.PrimitiveEnum;
+        if (type is QbePrimitive primitive)
+        {
+            if (!primitive.Equals(right.PrimitiveEnum))
+            {
+                TryImplicitCast(left, right);
+            }
+
+            var result = binary.Operator switch
+            {
+                Operator.Plus => CurrentBlock!.Add(left, right),
+                Operator.Minus => CurrentBlock!.Sub(left, right),
+                Operator.Asterisk => CurrentBlock!.Mul(left, right),
+                Operator.Divide => CurrentBlock!.Div(left, right),
+                Operator.Modulus => CurrentBlock!.Rem(left, right),
+                _ => throw new NotSupportedException(
+                    $"Binary operation {binary.Operator} for type {type} is not supported in this context.")
+            };
+            
+            return result;
+        }
+        else
+        {
+            throw new NotImplementedException(
+                $"Binary operation for custom types is not implemented yet.");
+        }
+    }
+
+    private static void TryImplicitCast(QbeValue left, QbeValue right)
+    {
+        bool canImplicitlyCast = AnalyzerType.ImplicitCast(left.PrimitiveEnum, right.PrimitiveEnum)
+            .Equals(right.PrimitiveEnum) && right is QbeLiteral;
+        if (!canImplicitlyCast)
+            throw new InvalidOperationException(
+                $"Cannot implicitly cast {left.PrimitiveEnum} to {right.PrimitiveEnum} in binary operation.");
+                
+        // If we can implicitly cast, we will do so.
+        right.PrimitiveEnum = left.PrimitiveEnum;
+    }
+
+    private IQbeRef GetVariable(IdentifierExpression identifier)
+    {
+        if (!GetVariable(identifier.Identifier, out var variable))
+            throw new KeyNotFoundException($"Variable \"{identifier.Identifier}\" not found.");
+        return (QbeValue)variable;
+    }
+
+    private IQbeRef CreateLiteral(LiteralExpression literal, IQbeTypeDefinition? targetType = null)
+    {
+        if (literal.TypeLiteral == Literal.String)
+        {
+            return _stringLiterals.TryGetValue(literal, out var stringRef)
+                ? stringRef
+                : throw new KeyNotFoundException($"String literal \"{literal.Value}\" not found.");
+        }
+        
+        var qbeType = CodeGenHelpers.QbeGetLiteralType(literal.TypeLiteral);
+        
+        // Check if qbeType matches the target type, if not try a cast
+        if (targetType != null && !qbeType.Equals(targetType))
+        {
+            qbeType = AnalyzerType.ImplicitCast(qbeType, targetType);
+        }
+        
+        if (qbeType.IsFloat())
+        {
+            return new QbeLiteral(qbeType, double.Parse(literal.Value, CultureInfo.InvariantCulture));
+        }
+        else if (qbeType.IsInteger())
+        {
+            return new QbeLiteral(qbeType, long.Parse(literal.Value, CultureInfo.InvariantCulture));
+        }
+        
+        throw new NotSupportedException($"Literal type {literal.TypeLiteral} is not supported.");
+    }
+
+    private void ConvertReturnExpression(ReturnExpression returnExpression)
+    {
+        if (returnExpression.Value == null)
+        {
+            CurrentBlock!.Return();
+        }
+        else
+        {
+            var value = EvaluateExpression(returnExpression.Value);
+            CurrentBlock!.Return((QbeValue)value);
+        }
+    }
+    
     private void ConvertVariableDeclarationExpression(VariableDeclarationExpression variableDeclaration)
     {
         var identifier = variableDeclaration.Identifier;
         var type = variableDeclaration.Type;
+        IQbeTypeDefinition qbeType;
 
-        // Convert the type to a QBE type
-        IQbeTypeDefinition qbeType = null;
         if (type.TypeLiteral != Literal.Custom)
         {
             qbeType = CodeGenHelpers.QbeGetLiteralType(type.TypeLiteral);
-
-            // As for literals we can just initialize them as 0, later we will load a value into them
-            if (qbeType.IsFloat())
-            {
-                var variable = CurrentBlock!.Copy(new QbeLiteral(qbeType, 0.0));
-                if (!SetVariable(identifier, variable))
-                {
-                    throw new KeyNotFoundException($"Variable \"{identifier}\" not found in current block.");
-                }
-            }
-            else if (qbeType.IsInteger())
-            {
-                var variable = CurrentBlock!.Copy(new QbeLiteral(qbeType, 0));
-                if (!SetVariable(identifier, variable))
-                {
-                    throw new KeyNotFoundException($"Variable \"{identifier}\" not found in current block.");
-                }
-            }
+            var initValue = qbeType.IsFloat()
+                ? new QbeLiteral(qbeType, 0.0)
+                : new QbeLiteral(qbeType, 0);
+            var variable = CurrentBlock!.Copy(initValue);
+            if (!SetVariable(identifier, variable))
+                throw new KeyNotFoundException($"Failed to declare variable \"{identifier}\".");
         }
         else
         {
-            string flattenedType = ((IFlattenable)type).Flatten();
-            qbeType = _types[flattenedType].Item2;
-            
-            // Create an alloc instruction for the custom type
+            var flattened = ((IFlattenable)type).Flatten();
+            qbeType = _types[flattened].Item2;
             var ptr = CurrentBlock!.Allocate(qbeType.ByteSize(is32Bit));
-            SetVariable(identifier, ptr);
+            if (!SetVariable(identifier, ptr))
+            {
+                throw new KeyNotFoundException($"Failed to declare variable \"{identifier}\" of type {flattened}.");
+            }
         }
     }
 
     private void ConvertAssignmentExpression(AssignmentExpression assignment)
     {
-        var lhs = assignment.Lhs;
-        var rhs = assignment.Rhs;
-
-        IQbeRef variable;
         string variableName;
-        // Check if the lhs is an identifier, or a variable declaration
-        if (lhs is IdentifierExpression identifier)
-        {
-            var identifierName = identifier.Identifier;
-            if (GetVariable(identifierName, out variable))
-            {
-                variableName = identifierName;
-            }
-            else
-            {
-                // If the variable does not exist, we need to create it
-                throw new KeyNotFoundException($"Variable \"{identifierName}\" not found in current block.");
-            }
-        }
-        else if (lhs is VariableDeclarationExpression variableDeclaration)
-        {
-            ConvertVariableDeclarationExpression(variableDeclaration);
-            var identifierName = variableDeclaration.Identifier;
-            if (GetVariable(identifierName, out variable))
-            {
-                variableName = identifierName;
-            }
-            else
-            {
-                throw new KeyNotFoundException($"Variable \"{identifierName}\" not found in current block.");
-            }
-        }
-        else
-        {
-            throw new NotSupportedException($"Assignment to {lhs.GetType().Name} is not supported.");
-        }
-        
-        if (rhs is LiteralExpression literal)
-        {
-            var qbeType = CodeGenHelpers.QbeGetLiteralType(literal.TypeLiteral);
 
-            if (qbeType.IsFloat())
-            {
-                double parsedValue = double.Parse(literal.Value);
-                var literalValue = new QbeLiteral(qbeType, parsedValue);
-                // Use the copy instruction, then overwrite teh variable reference
-                variable = CurrentBlock!.Copy(literalValue);
-            }
-            else if (qbeType.IsInteger())
-            {
-                long parsedValue = long.Parse(literal.Value);
-                var literalValue = new QbeLiteral(qbeType, parsedValue);
-                // Use the copy instruction, then overwrite the variable reference
-                variable = CurrentBlock!.Copy(literalValue);
-            }
-            else
-            {
-                throw new NotSupportedException($"Literal type {qbeType} is not supported for assignment.");
-            }
+        if (assignment.Lhs is IdentifierExpression identifier)
+        {
+            variableName = identifier.Identifier;
+            if (!GetVariable(variableName, out _))
+                throw new KeyNotFoundException($"Variable \"{variableName}\" not found.");
+        }
+        else if (assignment.Lhs is VariableDeclarationExpression decl)
+        {
+            ConvertVariableDeclarationExpression(decl);
+            variableName = decl.Identifier;
+            if (!GetVariable(variableName, out _))
+                throw new KeyNotFoundException($"Variable \"{variableName}\" not found after declaration.");
         }
         else
-            throw new NotSupportedException(
-                $"Assignment of type {rhs.GetType().Name} is not supported in this context.");
-        
-        // Update the variables dictionary with the new variable reference
-        if (!SetVariable(variableName, variable))
         {
-            throw new KeyNotFoundException($"Variable \"{variableName}\" not found in current block.");
+            throw new NotSupportedException($"Assignment to {assignment.Lhs.GetType().Name} is not supported.");
         }
+
+        var result = EvaluateExpression(assignment.Rhs,
+            GetVariable(variableName, out var existingVariable) ? ((QbeValue)existingVariable).PrimitiveEnum : null);
+        var copied = CurrentBlock!.Copy((QbeValue)result);
+
+        if (!SetVariable(variableName, copied))
+            throw new KeyNotFoundException($"Variable \"{variableName}\" not found for assignment.");
     }
     
     public bool GetVariable(string identifier, out IQbeRef variable)
@@ -236,44 +311,102 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
         return false;
     }
     
+    private string GetFunction(string name)
+    {
+        // Check if the function is a C function
+        if (name.StartsWith(options.CPrefix))
+        {
+            // assume whatever, probably valid or something, remove everything before the last identifier
+            var lastDotIndex = name.LastIndexOf('.');
+            if (lastDotIndex != -1)
+            {
+                name = name.Substring(lastDotIndex + 1);
+            }
+
+            return name;
+        }
+        
+        // Check if the function is a global function
+        foreach (var function in _globalFunctions)
+        {
+            if (function.Identifier == name)
+            {
+                return function.Identifier;
+            }
+        }
+        
+        // Check if the function is defined in the types
+        foreach (var type in _types.Keys)
+        {
+            if (_types[type].Item1.Functions.Any(x => x.Identifier == name))
+            {
+                return CodeGenHelpers.QbeGetCustomFunctionName(_types[type].Item2, name);
+            }
+        }
+        
+        throw new KeyNotFoundException($"Function \"{name}\" not found.");
+    }
+    
+    private IQbeTypeDefinition? GetFunctionReturnType(string name, out bool isCfunction, IQbeTypeDefinition? lhsType = null)
+    {
+        isCfunction = false;
+        // Check if the function is a C function
+        if (name.StartsWith(options.CPrefix))
+        {
+            // assume whatever, probably valid or something, remove everything before the last identifier
+            var lastDotIndex = name.LastIndexOf('.');
+            if (lastDotIndex != -1)
+            {
+                name = name.Substring(lastDotIndex + 1);
+            }
+            isCfunction = true;
+
+            return lhsType ?? null;
+        }
+        
+        // Check if the function is a global function
+        foreach (var function in _globalFunctions)
+        {
+            if (function.Identifier == name)
+            {
+                return function.ReturnType;
+            }
+        }
+        
+        // Check if the function is defined in the types
+        foreach (var type in _types.Keys)
+        {
+            if (_types[type].Item1.Functions.Any(x => x.Identifier == name))
+            {
+                var ihastype = _types[type].Item1.Functions.First(x => x.Identifier == name).ReturnType;
+                if (ihastype.TypeLiteral != Literal.Custom)
+                {
+                    return CodeGenHelpers.QbeGetLiteralType(ihastype.TypeLiteral);
+                }
+                else
+                {
+                    return _types[type].Item2;
+                }
+            }
+        }
+        
+        throw new KeyNotFoundException($"Function \"{name}\" not found.");
+    }
+
     public bool SetVariable(string identifier, IQbeRef variable)
     {
-        // Check the current block's variables first
+        if (_blockStack.Count == 0)
+        {
+            throw new InvalidOperationException("Block stack is empty. Cannot set variable.");
+        }
         if (_blockStack.Peek().variables.ContainsKey(identifier))
         {
             _blockStack.Peek().variables[identifier] = variable;
             return true;
         }
-
-        // If not found, check the global functions
-        foreach (var function in _globalFunctions)
-        {
-            if (function.Arguments.Any(x => x.Identifier == identifier))
-            {
-                variable = new QbeLocalRef(
-                    function.Arguments.First(x => x.Identifier == identifier).Primitive,
-                    function.Arguments.First(x => x.Identifier == identifier).Identifier);
-                return true;
-            }
-        }
-
-        // If still not found, check the types
-        foreach (var type in _types.Keys)
-        {
-            if (_types[type].Item1.Members.Any(x => x.Identifier == identifier))
-            {
-                throw new NotImplementedException(
-                    $"Accessing type members in expressions is not implemented yet. Type: {type}, Identifier: {identifier}");
-            }
-        }
-
-        // If not found anywhere, add it to the current block's variables
-        if (_blockStack.Count > 0)
-        {
-            _blockStack.Peek().variables[identifier] = variable;
-            return true;
-        }
-        return false;
+        // If the variable is not found in the current block, we can try to add it.
+        _blockStack.Peek().variables.Add(identifier, variable);
+        return true;
     }
 
     public QbeBlock? CurrentBlock { get; set; } = _currentBlock;

@@ -30,10 +30,16 @@ rum.text.string application_help(){
 entrypoint int main()
 {
     int x = 5;
-    return x;
+    x = 10;
+    x = x + 10;
+    x = x * (x * 10);
+    c.printf("Hello World! %d\n", x);
+    c.puts("Hello World!");
+    int y = test(x, 10);
+    c.printf("%d + %d = %d\n", x, 10, y);
+    return 0;
 }
-/*
+
 int test(int x, int y){
     return x + y;
 }
-*/

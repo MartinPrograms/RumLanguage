@@ -176,7 +176,7 @@ public class RumAnalyzer
                     var baseName = ns.GetFullName();
 
                     foreach (var func in ns.Functions)
-                        AddToMap(_externalFunctionMap, $"{baseName}.{func.FunctionName}", func, "Function");
+                        AddToMap(_externalFunctionMap, $"{baseName}.{func.Identifier}", func, "Function");
 
                     foreach (var type in ns.Types)
                         AddToMap(_externalTypeMap, $"{baseName}.{type.Name}", type, "Type");
@@ -197,7 +197,7 @@ public class RumAnalyzer
                 AddToMap(_definedTypes, $"{fullName}.{type.Name}", type, "Type");
 
             foreach (var func in ns.Functions)
-                AddToMap(_definedFunctions, $"{fullName}.{func.FunctionName}", func, "Function");
+                AddToMap(_definedFunctions, $"{fullName}.{func.Identifier}", func, "Function");
 
             _results.Add(new AnalyzerResult(AnalyzerResultType.Success,
                 $"Namespace \"{fullName}\" defined."));
@@ -212,7 +212,7 @@ public class RumAnalyzer
             AddToMap(_definedTypes, type.Name, type, "File-local type");
 
         foreach (var func in entry.TopLevelFunctions)
-            AddToMap(_definedFunctions, func.FunctionName, func, "File-local function");
+            AddToMap(_definedFunctions, func.Identifier, func, "File-local function");
     }
 
     private void AddToMap<T>(Dictionary<string, T> map, string key, T value, string label)

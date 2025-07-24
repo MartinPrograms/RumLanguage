@@ -4,7 +4,7 @@ namespace RumLang.Parser.Definitions;
 
 public class FunctionDeclarationExpression : Expression, IHasChildren
 {
-    public string FunctionName { get; }
+    public string Identifier { get; }
     
     /// <summary>
     /// Reused type, Value is repurposed as variable name.
@@ -23,11 +23,11 @@ public class FunctionDeclarationExpression : Expression, IHasChildren
     
     public bool Export { get; }
 
-    public FunctionDeclarationExpression(string functionName, List<VariableDeclarationExpression> arguments, IHasType returnType,
+    public FunctionDeclarationExpression(string identifier, List<VariableDeclarationExpression> arguments, IHasType returnType,
         AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, int lineNumber, int columnNumber,bool isEntryPoint = false, bool export = false) 
         : base(lineNumber, columnNumber)
     {
-        FunctionName = functionName;
+        Identifier = identifier;
         Arguments = arguments;
         ReturnType = returnType;
         Access = accessModifier;
@@ -41,7 +41,7 @@ public class FunctionDeclarationExpression : Expression, IHasChildren
     {
         StringBuilder sb = new();
         sb.AppendLine($"{StringHelpers.Repeat("\t", depth)}FunctionDeclaration");
-        sb.Append($"{StringHelpers.Repeat("\t", depth)}:- Name: {FunctionName}");
+        sb.Append($"{StringHelpers.Repeat("\t", depth)}:- Name: {Identifier}");
         if (IsEntryPoint)
             sb.Append($" (entrypoint)");
         if (Expressions.Count <= 0)

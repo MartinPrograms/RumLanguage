@@ -82,9 +82,13 @@ public class Rum
         var codegen = new RumCodeGen(this, astRoot!, analyzer);
         var (outputCode, codegenError, ms) = codegen.GenerateCode();
         
+        int lineCounter = 1;
         if (printDebugInfo)
         {
-            Console.WriteLine($"Generated code:\n{outputCode}");
+            foreach (var line in outputCode.Split('\n'))
+            {
+                Console.WriteLine($"{lineCounter++}:\t{line}");
+            }
             Console.WriteLine($"Code generation took {ms} ms");
         }
         

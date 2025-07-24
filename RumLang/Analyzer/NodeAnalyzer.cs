@@ -123,7 +123,7 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
                     return;
                 }
 
-                var constructor = targetType.Functions.FirstOrDefault(f => f.FunctionName == targetType.Name); // The constructor is just a function with the same name as the type.
+                var constructor = targetType.Functions.FirstOrDefault(f => f.Identifier == targetType.Name); // The constructor is just a function with the same name as the type.
                 if (constructor == null)
                 {
                     results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Custom type \"{typeName}\" has no constructor defined, but arguments were still passed! Line {newExpr.LineNumber}, column {newExpr.ColumnNumber}."));
@@ -285,7 +285,7 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
         if (functionCall.FunctionTarget is IdentifierExpression identifier)
         {
             if (!definedFunctions.ContainsKey(identifier.Identifier) && !externalFunctionMap.ContainsKey(identifier.Identifier) && 
-                (_currentType == null || _currentType.Functions.All(f => f.FunctionName != identifier.Identifier)))
+                (_currentType == null || _currentType.Functions.All(f => f.Identifier != identifier.Identifier)))
             {
                 if (identifier.Identifier.StartsWith(options.CPrefix))
                     return; // C functions are allowed to be called without being defined.
@@ -312,7 +312,7 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
             externalFunctionMap.ContainsKey(identifier.Identifier)
                 ? externalFunctionMap[identifier.Identifier]
                 :
-                _currentType?.Functions.FirstOrDefault(f => f.FunctionName == identifier.Identifier);
+                _currentType?.Functions.FirstOrDefault(f => f.Identifier == identifier.Identifier);
 
         if (targetFunction == null)
         {
@@ -365,6 +365,13 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
                     // If the implicit cast type does not match the target argument type, add an error.
                     results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Argument {i + 1} of function \"{identifier.Identifier}\" expects type {hasTypeTargetArg.TypeLiteral} but got {hasTypeArg.TypeLiteral} at line {thisArg.LineNumber}, column {thisArg.ColumnNumber}."));
                     continue;
+                }
+                
+                // Convert the current node to the implicit cast type if it was the reason why it passed
+                if (implicitCastType != hasTypeArg.TypeLiteral)
+                {
+                    // This is a valid implicit cast, we can continue.
+                    results.Add(new AnalyzerResult(AnalyzerResultType.Debug, $"Implicitly casting argument {i + 1} of function \"{identifier.Identifier}\" from {hasTypeArg.TypeLiteral} to {implicitCastType} at line {thisArg.LineNumber}, column {thisArg.ColumnNumber}."));
                 }
             }
         }
@@ -473,7 +480,7 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
             return; // Identifier is a member variable of the current class, no action needed.
         }
         
-        if (_currentType != null && _currentType.Functions.Any(f => f.FunctionName == id))
+        if (_currentType != null && _currentType.Functions.Any(f => f.Identifier == id))
         {
             return; // Identifier is a member function of the current class, no action needed.
         }
@@ -577,7 +584,7 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
             }
             else
             {
-                entryPoint = $"{function.FunctionName}";
+                entryPoint = $"{function.Identifier}";
             }
         }
         
@@ -611,8 +618,8 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
         _variableStack.Pop();
         _currentFunction = null;
         
-        string isConstructor = function.FunctionName == _currentType?.ClassName ? " (constructor)" : string.Empty;
-        results.Add(new AnalyzerResult(AnalyzerResultType.Success, $"Function \"{function.FunctionName}\" defined{isConstructor}"));
+        string isConstructor = function.Identifier == _currentType?.ClassName ? " (constructor)" : string.Empty;
+        results.Add(new AnalyzerResult(AnalyzerResultType.Success, $"Function \"{function.Identifier}\" defined{isConstructor}"));
     }
 
     private void AnalyzeImport(ImportExpression import)

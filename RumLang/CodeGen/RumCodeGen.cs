@@ -84,7 +84,7 @@ public class RumCodeGen(Rum rum, List<AstNode> astNodes, RumAnalyzer analyzer)
         AddTypes(module, analyzer.DefinedTypes);
 
         _expressionConverter =
-            new ExpressionConverter(_blockStack, null, _stringLiterals, _types, _functions, _globalFunctions);
+            new ExpressionConverter(_blockStack, null, _stringLiterals, _types, _functions, _globalFunctions, analyzer.Options);
         
         AddTypeDefinitions(module, sortedNamespaces);
         AddTypeDefinitions(module, analyzer.DefinedTypes);
@@ -93,6 +93,12 @@ public class RumCodeGen(Rum rum, List<AstNode> astNodes, RumAnalyzer analyzer)
         foreach (var func in analyzer.DefinedFunctions)
         {
             AddFunction(module, null, func.Value);
+        }
+        
+        // Now add all the function bodies.
+        foreach (var body in _functionBodies)
+        {
+            body();
         }
         
         // Now we sort the external dependencies by their order, so if
@@ -141,10 +147,12 @@ public class RumCodeGen(Rum rum, List<AstNode> astNodes, RumAnalyzer analyzer)
         }
     }
 
+    private List<Action> _functionBodies = new();
+
     private void AddFunction(QbeModule module, QbeType? qbeType, FunctionDeclarationExpression function)
     {
         // This. This is the big one.
-        var newName = CodeGenHelpers.QbeGetCustomFunctionName(qbeType, function.FunctionName);
+        var newName = CodeGenHelpers.QbeGetCustomFunctionName(qbeType, function.Identifier);
         var qbeFunction = module.AddFunction(newName, function.Export ? QbeFunctionFlags.Export : QbeFunctionFlags.None, GetTypeDefinition((IHasType)function.ReturnType), function.IsVariadic, GetQbeArguments(function.Arguments));
         if (qbeType != null)
         {
@@ -160,21 +168,26 @@ public class RumCodeGen(Rum rum, List<AstNode> astNodes, RumAnalyzer analyzer)
         }
         
         // Define the actual function body.
-        if (function.Expressions.Count > 0)
+        _functionBodies.Add(() =>
         {
-            var start = qbeFunction.BuildEntryBlock();
-            _expressionConverter.CurrentBlock = start;
-            _blockStack.Push((start, new Dictionary<string,IQbeRef>()));
-            foreach (var expr in function.Expressions)
+            if (function.Expressions.Count > 0)
             {
-                AddExpression(expr);
+                var start = qbeFunction.BuildEntryBlock();
+                _expressionConverter.CurrentBlock = start;
+                _blockStack.Push((start, new Dictionary<string, IQbeRef>()));
+                foreach (var expr in function.Expressions)
+                {
+                    AddExpression(expr);
+                }
+
+                _blockStack.Pop();
             }
-            _blockStack.Pop();
-        }
+        });
         // Do nothing if there are no expressions.
     }
 
     private Stack<(QbeBlock block, Dictionary<string,IQbeRef> variables)> _blockStack = new();
+
     private void AddExpression(Expression expr)
     {
         _expressionConverter.ConvertExpressionToQbe(expr);
