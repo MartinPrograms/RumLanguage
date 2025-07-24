@@ -26,20 +26,26 @@ rum.text.string application_help(){
     return "Hi this application is an analyzer test-bed!";
 }
 */
+
+// To access C functions we just use c.whatever
+// Like c.printf, c.strlen, etc.
+// It just tells the compiler to ignore any type/function checking
+
 // File local
-entrypoint int main()
+pointer create_array(long size)
 {
-    int x = 5;
-    x = 10;
-    x = x + 10;
-    x = x * (x * 10);
-    c.printf("Hello World! %d\n", x);
-    c.puts("Hello World!");
-    int y = test(x, 10);
-    c.printf("%d + %d = %d\n", x, 10, y);
-    return 0;
+    pointer arr = c.malloc(size);
+    return arr;
 }
 
-int test(int x, int y){
-    return x + y;
+entrypoint int main()
+{
+    // Create an array of 10 long integers
+    pointer arr = create_array(10 * 8); // A long is 8 bytes
+    
+    ***arr = 10;
+    //int a = 0;
+    //a++;
+    
+    return 0;
 }

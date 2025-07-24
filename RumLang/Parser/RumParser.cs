@@ -635,7 +635,7 @@ public class RumParser : IDebugInfo
 
         return new IfExpression(condition, ifBlock, GetLineNumber(), GetColumnNumber(), elseBlock);
     }
-
+    private const float PrefixUnaryPrecedence = 15.0f; // Higher than any binary operator
     private Expression ParseExpression(float parentPrecedence = 0.0f)
     {
         Expression left;
@@ -644,11 +644,12 @@ public class RumParser : IDebugInfo
         {
             var op = Peek()!.Operator!.Value;
             Advance();
-            var operand = ParseExpression();
-            return new UnaryExpression(op, operand, false, GetLineNumber(), GetColumnNumber());
+            // Parse operand with high precedence to prevent consuming assignment
+            var operand = ParseExpression(PrefixUnaryPrecedence);
+            left = new UnaryExpression(op, operand, false, GetLineNumber(), GetColumnNumber());
         }
-
-        left = ParsePrimary();
+        else
+            left = ParsePrimary();
 
         if (Peek()!.Type == TokenType.Identifier)
         {

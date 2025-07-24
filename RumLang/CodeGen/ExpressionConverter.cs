@@ -38,6 +38,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
             case FunctionCallExpression functionCall:
                 ConvertFunctionCallExpression(functionCall);
                 break;
+
             default:
                 // Handle other expression types here
                 // For example, if you have a LiteralExpression, IdentifierExpression, etc.
@@ -46,7 +47,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
                 break;
         }
     }
-
+    
     private IQbeRef? ConvertFunctionCallExpression(FunctionCallExpression functionCall, IQbeTypeDefinition? lhsType = null)
     {
         var name = ((IFlattenable)functionCall.FunctionTarget).Flatten();
@@ -77,7 +78,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
             foreach (var (arg, expected) in refs.Zip(expectedArgs, (r, e) => (r, e)))
             {
                 QbeValue qbeArg = (QbeValue)arg;
-                if (((QbeValue)arg).PrimitiveEnum != expected.Primitive)
+                if (!((QbeValue)arg).PrimitiveEnum.Equals(expected.Primitive))
                 {
                     // Try to implicitly cast the argument to the expected type
                     var casted = AnalyzerType.ImplicitCast(((QbeValue)arg).PrimitiveEnum, expected.Primitive);
