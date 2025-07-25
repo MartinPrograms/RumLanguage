@@ -1,3 +1,4 @@
+using RumLang.CodeGen;
 using RumLang.Parser;
 using RumLang.Parser.Definitions;
 using RumLang.Tokenizer;
@@ -194,6 +195,45 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
     {
         if (memberAccess == null)
             throw new ArgumentNullException(nameof(memberAccess), "Member access expression cannot be null.");
+        
+        // Check if the member target is an identifier in the current scope.
+        if (memberAccess.Target is IdentifierExpression identifier)
+        {
+            // We can not use AnalyzeIdentifier here because it might error out on namespaces/other stuff
+            if (AnalyzerType.BuiltInTypes.ContainsKey(identifier.Identifier))
+            {
+                return; // Built-in types are valid, no action needed.
+            }
+            
+            bool isVariable = _variableStack.Count > 0 &&
+                              _variableStack.Peek().Any(v => v.Identifier == identifier.Identifier);
+            if (_currentFunction != null)
+            {
+                if (_currentFunction.Arguments.Any(arg => arg.Identifier == identifier.Identifier))
+                {
+                    isVariable = true; // Identifier is an argument of the current function.
+                }
+            }
+            
+            if (isVariable)
+            {
+                return; // Identifier is defined in the current scope, no action needed.
+            }
+            
+            bool isType = definedTypes.ContainsKey(identifier.Identifier) || externalTypeMap.ContainsKey(identifier.Identifier);
+            if (isType)
+            {
+                return; // Identifier is a type, no action needed.
+            }
+            
+            bool isFunction = definedFunctions.ContainsKey(identifier.Identifier) || externalFunctionMap.ContainsKey(identifier.Identifier);
+            if (isFunction)
+            {
+                return; // Identifier is a function, no action needed.
+            }
+            
+            return; // We can assume the identifier is valid.
+        }
 
         // Flatten the member access to an identifier.
         var flattenedIdentifier = new IdentifierExpression(memberAccess.Flatten(), memberAccess.LineNumber, memberAccess.ColumnNumber);
@@ -217,7 +257,10 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
             // If both sides have types, we can check if they are compatible.
             if (lhsType.TypeLiteral != rhsType.TypeLiteral)
             {
-                results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Binary operation between {lhsType.TypeLiteral} and {rhsType.TypeLiteral} is not allowed at line {binary.LineNumber}, column {binary.ColumnNumber}."));
+                if (lhsType.TypeLiteral == Literal.Custom || rhsType.TypeLiteral == Literal.Custom)
+                    results.Add(new AnalyzerResult(AnalyzerResultType.Warning, $"Binary operation between {lhsType.TypeLiteral} and {rhsType.TypeLiteral} may not be valid! I am a lazy mf i need to add type checking to this. at line {binary.LineNumber}, column {binary.ColumnNumber}."));
+                else
+                    results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Binary operation between {lhsType.TypeLiteral} and {rhsType.TypeLiteral} is not allowed at line {binary.LineNumber}, column {binary.ColumnNumber}."));
             }
 
             if (lhsType.TypeLiteral == Literal.Custom && rhsType.TypeLiteral == Literal.Custom)
@@ -493,17 +536,41 @@ public class NodeAnalyzer(Rum rum, Dictionary<string, List<AnalyzerNamespace>> d
         {
             id = id.Substring(Keyword.This.ToString().Length + 1); // Remove 'this.' prefix.
         }
-        if (_currentType != null && _currentType.Variables.Any(v => v.Identifier == id))
+        if (_currentType != null && _currentType.Variables.Any(v => v.Identifier == CodeGenHelpers.GetIdentifierFromPotentiallMemberedString(id)))
         {
             return; // Identifier is a member variable of the current class, no action needed.
         }
         
-        if (_currentType != null && _currentType.Functions.Any(f => f.Identifier == id))
+        if (_currentType != null && _currentType.Functions.Any(f => f.Identifier == CodeGenHelpers.GetIdentifierFromPotentiallMemberedString(id)))
         {
             return; // Identifier is a member function of the current class, no action needed.
         }
         
-        results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Identifier \"{identifier.Identifier}\" is not defined in the current scope at line {identifier.LineNumber}, column {identifier.ColumnNumber}."));
+        // Split the identifier by '.' to check for nested identifiers.
+        var parts = identifier.Identifier.Split('.');
+        // Check if parts[0] might exist as a variable or type.
+        if (parts.Length > 1)
+        {
+            // If the first part is a variable or type, we can assume the rest is a member access.
+            var firstPart = parts[0];
+            
+            // If there is more than one part, check that too.
+            if (parts.Length > 2)
+            {
+                AnalyzeIdentifier(new IdentifierExpression(string.Join(".", parts.Skip(1)), identifier.LineNumber, identifier.ColumnNumber));
+            }
+            
+            if (_variableStack.Count > 0 && _variableStack.Peek().Any(v => v.Identifier == firstPart))
+            {
+                return; // First part is a variable, no action needed.
+            }
+            if (definedTypes.ContainsKey(firstPart) || externalTypeMap.ContainsKey(firstPart))
+            {
+                return; // First part is a type, no action needed.
+            }
+        }
+        
+        results.Add(new AnalyzerResult(AnalyzerResultType.Error, $"Identifier \"{CodeGenHelpers.GetIdentifierFromPotentiallMemberedString(identifier.Identifier)}\" is not defined in the current scope at line {identifier.LineNumber}, column {identifier.ColumnNumber}."));
     }
 
     private void AnalyzeVariable(VariableDeclarationExpression variable)

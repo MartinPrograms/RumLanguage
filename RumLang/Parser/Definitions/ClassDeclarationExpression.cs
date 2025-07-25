@@ -1,3 +1,5 @@
+using RumLang.Tokenizer;
+
 namespace RumLang.Parser.Definitions;
 
 /*
@@ -21,19 +23,24 @@ public class test_class
    }
 }
  */
-public class ClassDeclarationExpression : Expression, IHasChildren
+public class ClassDeclarationExpression : Expression, IHasChildren, IHasType, IFlattenable
 {
     public string ClassName { get; }
     public AccessModifier AccessModifier { get; }
+    public List<NamespaceDeclarationExpression> Namespaces { get; }
     public List<FunctionDeclarationExpression> Functions { get; }
     public List<ClassMemberDeclaration> Variables { get; }
     
-    public ClassDeclarationExpression(string className, AccessModifier accessModifier,
+    public Literal TypeLiteral => Literal.Custom;
+    public Expression TypeExpression => this;
+    
+    public ClassDeclarationExpression(string className, List<NamespaceDeclarationExpression> namespaces, AccessModifier accessModifier,
         List<FunctionDeclarationExpression> functions, List<ClassMemberDeclaration> variables, int lineNumber, int columnNumber) 
         : base(lineNumber, columnNumber)
     {
         ClassName = className;
         AccessModifier = accessModifier;
+        Namespaces = namespaces ?? new List<NamespaceDeclarationExpression>();
         Functions = functions;
         Variables = variables;
     }
@@ -66,5 +73,18 @@ public class ClassDeclarationExpression : Expression, IHasChildren
         children.AddRange(Functions);
         children.AddRange(Variables);
         return new List<List<AstNode>> { children };
+    }
+
+    public string Flatten()
+    {
+        // For each namespace prepend a .
+        StringBuilder sb = new();
+        foreach (var ns in Namespaces)
+        {
+            sb.Append(ns.Identifier);
+            sb.Append(".");
+        }
+        sb.Append(ClassName);
+        return sb.ToString();
     }
 }

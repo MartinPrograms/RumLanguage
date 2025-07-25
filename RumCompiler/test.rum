@@ -1,9 +1,4 @@
 // test.rum - A custom language! Using QBE as a backend.
-/*
-import rum.io;
-import rum.text;
-import c.stdio;
-import c.SDL3.SDL;
 
 class banking_info
 {
@@ -18,38 +13,12 @@ class banking_info
     }
 }
 
-int varargs(int x, int y, ...){
-    return x + y;
-}
-
-rum.text.string application_help(){
-    return "Hi this application is an analyzer test-bed!";
-}
-*/
-
 // To access C functions we just use c.whatever
 // Like c.printf, c.strlen, etc.
 // It just tells the compiler to ignore any type/function checking
 
-// File local
-pointer create_array(long size)
-{
-    pointer arr = c.malloc(size);
-    return arr;
-}
-
 entrypoint int main()
 {
-    // Create an array of 10 long integers
-    pointer arr = create_array(10 * 8); // A long is 8 bytes
-    
-    *arr = 10;
-    arr = arr + 8;
-    *arr = 20;
-    arr = arr - 8;
-    c.printf("First element: %ld\n", *arr);
-    arr = arr + 8; // Move to the second element
-    c.printf("Second element: %ld\n", *arr);
-  
-    return 0;
+    int glfwOut = c.glfwInit();
+    return glfwOut;
 }

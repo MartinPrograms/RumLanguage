@@ -12,7 +12,8 @@ var arguments = new ConsoleUtils(args, new List<IArgument>()
     new ConsoleFlag("d", "Show all debug information"),
     new ConsoleFlag("ar", "Auto run after compilation (only works if compiler is specified & program has entry point)"),
     new ConsoleArgument<string>("compiler", "Compiler name (gcc/clang), if none specified it will just compile to QBE code without generating an executable", false),
-    new ConsoleArgument<string>("arch", "QBE architecture (amd64_sysv (default), amd64_apple, arm64, arm64_apple, rv64)", false)
+    new ConsoleArgument<string>("arch", "QBE architecture (amd64_sysv (default), amd64_apple, arm64, arm64_apple, rv64)", false),
+    new ConsoleArgument<string>("l", "Link libraries (comma-seperated list of things that will be passed to GCC/Clang as -l<libname> (for example: \"SDL2,m,dl\"))", false),
 });
 
 if (arguments.FlagExists("h"))
@@ -111,8 +112,17 @@ if (arguments.GetArgumentValue<string>("ob") != null)
     Console.WriteLine($"QBE code generated successfully at {qbeFile}.");
     Console.WriteLine($"Assembly code generated at {tempAsmFile}.");
     
+    var linkLibraries = arguments.GetArgumentValue<string>("l");
+    string[] linkFlags = Array.Empty<string>();
+    if (!string.IsNullOrWhiteSpace(linkLibraries))
+    {
+        var libs = linkLibraries.Split(',').Select(lib => $"-l{lib.Trim()}").ToArray();
+        Console.WriteLine($"Linking libraries: {string.Join(", ", libs)}");
+        linkFlags = libs;
+    }
+    
     sw = Stopwatch.StartNew();
-    var exitCode = Rum.RunProcess(compiler, $"-o {outputBinaryPath} {tempAsmFile} -O2 -lm");
+    var exitCode = Rum.RunProcess(compiler, $"-o {outputBinaryPath} {tempAsmFile} -O2 -lm {string.Join(" ", linkFlags)}");
     if (exitCode != 0)
     {
         Console.WriteLine($"Compilation with {compiler} failed with exit code {exitCode}.");

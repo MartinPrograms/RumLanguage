@@ -2,7 +2,7 @@ namespace rum
 {
     namespace text
     {
-    /*
+    
         class string
         {
             public long length;
@@ -14,11 +14,7 @@ namespace rum
                 this.source = source;
             }
         }
-        
-        public rum.text.string testing()
-        {
-            return new rum.text.string(7, "RumLang Testing");
-        }
-        */
+    
     }
+    
 }

@@ -8,7 +8,7 @@ using RumLang.Tokenizer;
 
 namespace RumLang.CodeGen;
 
-public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRef> variables)> _blockStack,
+public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,(IQbeRef, IQbeTypeDefinition?)> variables)> _blockStack,
     QbeBlock? _currentBlock,
     Dictionary<LiteralExpression, QbeGlobalRef> _stringLiterals,
     Dictionary<string, (AnalyzerType, QbeType)> _types, 
@@ -47,7 +47,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
                 break;
         }
     }
-    
+
     private IQbeRef? ConvertFunctionCallExpression(FunctionCallExpression functionCall, IQbeTypeDefinition? lhsType = null)
     {
         var name = ((IFlattenable)functionCall.FunctionTarget).Flatten();
@@ -119,12 +119,120 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
             
             case UnaryExpression unaryExpression:
                 return ConvertUnaryExpression(unaryExpression, targetType);
-
-            // Extend this with function calls, casting, logical ops, etc.
-
+            
+            case ThisExpression thisExpression:
+                return ConvertThisExpression(thisExpression, targetType);
+            
+            case NewExpression newExpression:
+                return ConvertNewExpression(newExpression);
+            
+            case MemberAccessExpression memberAccess:
+                return ConvertMemberAccessExpression(memberAccess);
+            
             default:
                 throw new NotSupportedException($"Expression type {expr.GetType().Name} not supported.");
         }
+    }
+
+    private IQbeRef ConvertMemberAccessExpression(MemberAccessExpression memberAccess)
+    {
+        // Otherwise, we need to evaluate the target first.
+        var target = EvaluateExpression(memberAccess.Target);
+        if (target is not QbeValue targetValue || target is not QbeLocalRef localRef)
+        {
+            throw new InvalidOperationException($"Member access target must be a QbeValue, but got {target.GetType().Name}.");
+        }
+        
+        QbeType typeDefinition;
+        // Find the target in the current scope
+        var targetTuple = _blockStack.Peek().variables.FirstOrDefault(x => x.Value.Item1.Equals(targetValue));
+        typeDefinition = (QbeType)targetTuple.Value.Item2!;
+        
+        // Now we can get the AnalyzerType from the type definition.
+        var typeInfo = _types.FirstOrDefault(x => x.Value.Item2.Equals(typeDefinition));
+        if (typeInfo.Equals(default(KeyValuePair<string, (AnalyzerType, QbeType)>)))
+        {
+            throw new KeyNotFoundException($"Type \"{typeDefinition.Identifier}\" not found in the types dictionary.");
+        }
+        var typeDef = typeInfo.Value.Item1;
+        var idx = typeDef.Members.FindIndex(m => m.Identifier == memberAccess.MemberName);
+        var targetType = typeDefinition.GetDefinition().Definitions[idx].Primitive;
+        if (targetType == null)
+        {
+            // Set it to a pointer
+            targetType = QbePrimitive.Pointer;
+        }
+        
+        // This is the opposite of storing, we need to load the member from the target.
+        // To do this, we will use the offset of the member in the type definition.
+        var loadOp = CurrentBlock!.LoadFromType(targetType, targetValue, typeDefinition, idx, is32Bit);
+        return loadOp;
+    }
+
+    private IQbeRef ConvertNewExpression(NewExpression newExpression)
+    {
+        var targetType = newExpression.Type;
+        var args = newExpression.Arguments;
+        
+        // Get the qbeType
+        var flattenedType = ((IFlattenable)targetType).Flatten();
+        if (!_types.TryGetValue(flattenedType, out var typeInfo))
+        {
+            throw new KeyNotFoundException($"Type \"{flattenedType}\" not found.");
+        }
+        
+        var qbeType = typeInfo.Item2;
+        
+        // Allocate it. 
+        var size = qbeType.ByteSize(is32Bit);
+        var allocated = CurrentBlock!.Allocate(size); // This is what we will be returning, but first we check if there is a constructor for this type.
+        
+        var constructorName = CodeGenHelpers.QbeGetCustomFunctionName(qbeType, qbeType.Identifier);
+        if (_functions.TryGetValue(qbeType, out var functions) && functions.Any(f => f.Identifier == constructorName))
+        {
+            var constructor = functions.First(f => f.Identifier == constructorName);
+            var argsRefs = args.Select(arg => EvaluateExpression(arg)).ToArray();
+            
+            // Insert the allocated pointer as the first argument to the constructor.
+            if (argsRefs.Length == 0 || !(argsRefs[0] is QbeValue firstArg) || firstArg.PrimitiveEnum != QbePrimitive.Pointer)
+            {
+                // If the first argument is not a pointer, we need to add it.
+                argsRefs = new[] { allocated }.Concat(argsRefs).ToArray();
+            }
+            else
+            {
+                // If the first argument is already a pointer, we can just use it.
+                argsRefs[0] = allocated;
+            }
+            
+            CurrentBlock!.Call(constructor.Identifier, null, argsRefs.Cast<QbeValue>().ToArray());
+        }
+        
+        // No constructor found, we just return the allocated pointer.
+        return allocated;
+    }
+
+    private IQbeRef ConvertThisExpression(ThisExpression thisExpression, IQbeTypeDefinition? targetType)
+    {
+        // Just return the current function's argument called "this", if it does not exist, throw an exception.
+        if (CurrentBlock == null)
+        {
+            throw new InvalidOperationException("Current block is not set. Cannot convert 'this' expression.");
+        }
+
+        var type = thisExpression.TypeName;
+        if (!_types.TryGetValue(type, out var typeInfo))
+        {
+            throw new KeyNotFoundException($"Type \"{type}\" not found.");
+        }
+
+        var thisVariable = typeInfo.Item1.Functions.FirstOrDefault(f => f.Identifier == thisExpression.FunctionName); 
+        if (thisVariable == null)
+        {
+            throw new KeyNotFoundException($"Function 'this' not found in type {type}.");
+        }
+
+        return Qbe.LRef(typeInfo.Item2, "this");
     }
 
     private IQbeRef ConvertUnaryExpression(UnaryExpression unaryExpression, IQbeTypeDefinition? targetType)
@@ -199,7 +307,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
 
     private IQbeRef GetVariable(IdentifierExpression identifier)
     {
-        if (!GetVariable(identifier.Identifier, out var variable))
+        if (!GetVariable(identifier.Identifier, out var variable, out _))
             throw new KeyNotFoundException($"Variable \"{identifier.Identifier}\" not found.");
         return (QbeValue)variable;
     }
@@ -267,7 +375,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
             var flattened = ((IFlattenable)type).Flatten();
             qbeType = _types[flattened].Item2;
             var ptr = CurrentBlock!.Allocate(qbeType.ByteSize(is32Bit));
-            if (!SetVariable(identifier, ptr))
+            if (!SetVariable(identifier, ptr, qbeType))
             {
                 throw new KeyNotFoundException($"Failed to declare variable \"{identifier}\" of type {flattened}.");
             }
@@ -281,14 +389,14 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
         if (assignment.Lhs is IdentifierExpression identifier)
         {
             variableName = identifier.Identifier;
-            if (!GetVariable(variableName, out _))
+            if (!GetVariable(variableName, out _, out _))
                 throw new KeyNotFoundException($"Variable \"{variableName}\" not found.");
         }
         else if (assignment.Lhs is VariableDeclarationExpression decl)
         {
             ConvertVariableDeclarationExpression(decl);
             variableName = decl.Identifier;
-            if (!GetVariable(variableName, out _))
+            if (!GetVariable(variableName, out _, out _))
                 throw new KeyNotFoundException($"Variable \"{variableName}\" not found after declaration.");
         }
         else if (assignment.Lhs is UnaryExpression unary)
@@ -299,7 +407,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
                 // Special case, we need to dereference the identifier. We can NOT use the identifier directly.
                 variableName = idExpr.Identifier;
                 
-                if (!GetVariable(variableName, out var variable))
+                if (!GetVariable(variableName, out var variable, out _))
                     throw new KeyNotFoundException($"Variable \"{variableName}\" not found for dereferencing.");
                 if (variable is not QbeLocalRef localRef)
                 {
@@ -341,24 +449,79 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
                 throw new NotSupportedException($"Unary operation {unary.Operator} is not supported in assignment.");
             }
         }
+        else if (assignment.Lhs is MemberAccessExpression memberAccess)
+        {
+            variableName = memberAccess.MemberName;
+            var variable = GetVariable(variableName, out var existingVar, out _);
+            var target = EvaluateExpression(memberAccess.Target, ((QbeValue)existingVar).PrimitiveEnum);
+            if (target is not QbeValue targetValue)
+            {
+                throw new InvalidOperationException(
+                    $"Member access target must be a QbeValue, but got {target.GetType().Name}.");
+            }
+            
+            // use the store operator to store the value in the member. Using the StoreToType method in CurrentBlock.
+            // IQbeTypeDefinition type, QbeValue prt, QbeValue value, QbeType typeDefinition, int idx, bool is32Bit is the signature.
+            (AnalyzerType, QbeType) typeInfo;
+            
+            if (memberAccess.Target is IdentifierExpression identifierExpr)
+            {
+                if (!GetVariable(identifierExpr.Identifier, out var typeReference, out var definition))
+                {
+                    throw new KeyNotFoundException($"Variable \"{identifierExpr.Identifier}\" not found.");
+                }
+
+                var a = _types.FirstOrDefault(x => x.Value.Item2.Equals(definition!));
+                typeInfo = a.Value;
+            }
+            else if (memberAccess.Target is ThisExpression thisExpr)
+            {
+                // This is a special case, we need to get the type from the current function.
+                if (!_types.TryGetValue(thisExpr.TypeName, out typeInfo))
+                {
+                    throw new KeyNotFoundException($"Type \"{thisExpr.TypeName}\" not found.");
+                }
+            }
+            else if (!_types.TryGetValue(((ThisExpression)memberAccess.TypeExpression).TypeName, out typeInfo))
+            {
+                throw new KeyNotFoundException($"Type \"{((IFlattenable)memberAccess.Target).Flatten()}\" not found.");
+            }
+            var typeDefinition = typeInfo.Item2;
+            var member = typeInfo.Item1.Members.FirstOrDefault(m => m.Identifier == variableName);
+            if (member == null)
+            {
+                throw new KeyNotFoundException($"Member \"{variableName}\" not found in type {typeDefinition.Identifier}.");
+            }
+            var idx = typeInfo.Item1.Members.IndexOf(member);
+            if (idx < 0)
+            {
+                throw new KeyNotFoundException($"Member \"{variableName}\" not found in type {typeDefinition.Identifier}.");
+            }
+
+            var rhs = EvaluateExpression(assignment.Rhs, typeDefinition);
+            CurrentBlock!.StoreToType(typeDefinition, targetValue, (QbeValue)rhs, typeDefinition, idx, is32Bit);
+        }
         else
         {
             throw new NotSupportedException($"Assignment to {assignment.Lhs.GetType().Name} is not supported.");
         }
 
         var result = EvaluateExpression(assignment.Rhs,
-            GetVariable(variableName, out var existingVariable) ? ((QbeValue)existingVariable).PrimitiveEnum : null);
-        var copied = CurrentBlock!.Copy((QbeValue)result);
+            GetVariable(variableName, out var existingVariable, out _) ? ((QbeValue)existingVariable).PrimitiveEnum : null);
+        //var copied = CurrentBlock!.Copy((QbeValue)result);
 
-        if (!SetVariable(variableName, copied))
+        if (!SetVariable(variableName, result))
             throw new KeyNotFoundException($"Variable \"{variableName}\" not found for assignment.");
     }
     
-    public bool GetVariable(string identifier, out IQbeRef variable)
+    public bool GetVariable(string identifier, out IQbeRef variable, out IQbeTypeDefinition? typeDefinition)
     {
         // Check the current block\"s variables first
-        if (_blockStack.Peek().variables.TryGetValue(identifier, out variable))
+        typeDefinition = null;
+        if (_blockStack.Peek().variables.TryGetValue(identifier, out var localVariable))
         {
+            variable = localVariable.Item1;
+            typeDefinition = localVariable.Item2;
             return true;
         }
 
@@ -370,6 +533,7 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
                 variable = new QbeLocalRef(
                     function.Arguments.First(x => x.Identifier == identifier).Primitive,
                     function.Arguments.First(x => x.Identifier == identifier).Identifier);
+                typeDefinition = function.Arguments.First(x => x.Identifier == identifier).Primitive;
                 return true;
             }
         }
@@ -379,14 +543,22 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
         {
             if (_types[type].Item1.Members.Any(x => x.Identifier == identifier))
             {
-                throw new NotImplementedException(
-                    $"Accessing type members in expressions is not implemented yet. Type: {type}, Identifier: {identifier}");
+                var member = _types[type].Item1.Members.First(x => x.Identifier == identifier);
+                // Now that we have the member, we need its type
+                var memberType = _types[type].Item2.GetDefinition().Definitions[_types[type].Item1.Members.IndexOf(member)];
+                IQbeTypeDefinition qbeType = QbePrimitive.Pointer;
+                if (memberType.Primitive != null)
+                    qbeType = memberType.Primitive;
+                variable = new QbeLocalRef(qbeType, member.Identifier);
+                typeDefinition = _types[type].Item2;
+                
                 return true;
             }
         }
 
         // If not found anywhere, return false
         variable = null!;
+        typeDefinition = null;
         return false;
     }
     
@@ -472,19 +644,20 @@ public class ExpressionConverter(Stack<(QbeBlock block, Dictionary<string,IQbeRe
         throw new KeyNotFoundException($"Function \"{name}\" not found.");
     }
 
-    public bool SetVariable(string identifier, IQbeRef variable)
+    public bool SetVariable(string identifier, IQbeRef variable, IQbeTypeDefinition? OverrideTypeDefinition = null)
     {
+        IQbeTypeDefinition typeDefinition = OverrideTypeDefinition ?? ((QbeValue)variable).PrimitiveEnum;
         if (_blockStack.Count == 0)
         {
             throw new InvalidOperationException("Block stack is empty. Cannot set variable.");
         }
         if (_blockStack.Peek().variables.ContainsKey(identifier))
         {
-            _blockStack.Peek().variables[identifier] = variable;
+            _blockStack.Peek().variables[identifier] = (variable, _blockStack.Peek().variables[identifier].Item2 ?? typeDefinition);
             return true;
         }
         // If the variable is not found in the current block, we can try to add it.
-        _blockStack.Peek().variables.Add(identifier, variable);
+        _blockStack.Peek().variables.Add(identifier, (variable, typeDefinition));
         return true;
     }
 

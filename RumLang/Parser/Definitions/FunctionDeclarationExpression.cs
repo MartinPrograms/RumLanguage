@@ -22,9 +22,11 @@ public class FunctionDeclarationExpression : Expression, IHasChildren
     public bool IsVariadic { get; }
     
     public bool Export { get; }
+    
+    public bool IsConstructor { get; }
 
     public FunctionDeclarationExpression(string identifier, List<VariableDeclarationExpression> arguments, IHasType returnType,
-        AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, int lineNumber, int columnNumber,bool isEntryPoint = false, bool export = false) 
+        AccessModifier accessModifier, List<Expression> expressions, bool isVariadic, int lineNumber, int columnNumber, bool isConstructor = false,bool isEntryPoint = false, bool export = false) 
         : base(lineNumber, columnNumber)
     {
         Identifier = identifier;
@@ -33,6 +35,7 @@ public class FunctionDeclarationExpression : Expression, IHasChildren
         Access = accessModifier;
         Expressions = expressions; 
         IsVariadic = isVariadic;
+        IsConstructor = isConstructor;
         IsEntryPoint = isEntryPoint;
         Export = export;
     }

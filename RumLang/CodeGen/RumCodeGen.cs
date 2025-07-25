@@ -153,7 +153,26 @@ public class RumCodeGen(Rum rum, List<AstNode> astNodes, RumAnalyzer analyzer)
     {
         // This. This is the big one.
         var newName = CodeGenHelpers.QbeGetCustomFunctionName(qbeType, function.Identifier);
-        var qbeFunction = module.AddFunction(newName, function.Export ? QbeFunctionFlags.Export : QbeFunctionFlags.None, GetTypeDefinition((IHasType)function.ReturnType), function.IsVariadic, GetQbeArguments(function.Arguments));
+        var arguments = GetQbeArguments(function.Arguments);
+        
+        // If we are a type, we must add the type as the first argument, and name it "this".
+        if (qbeType != null)
+        {
+            var thisArg = new QbeArgument(qbeType, "this");
+            if (arguments == null)
+            {
+                arguments = new[] { thisArg };
+            }
+            else
+            {
+                var newArgs = new QbeArgument[arguments.Length + 1];
+                newArgs[0] = thisArg;
+                Array.Copy(arguments, 0, newArgs, 1, arguments.Length);
+                arguments = newArgs;
+            }
+        }
+        
+        var qbeFunction = module.AddFunction(newName, function.Export ? QbeFunctionFlags.Export : QbeFunctionFlags.None, GetTypeDefinition((IHasType)function.ReturnType), function.IsVariadic, arguments);
         if (qbeType != null)
         {
             if (!_functions.TryGetValue(qbeType, out var functionList))
@@ -161,24 +180,30 @@ public class RumCodeGen(Rum rum, List<AstNode> astNodes, RumAnalyzer analyzer)
                 functionList = new List<QbeFunction>();
                 _functions[qbeType] = functionList;
             }
+            
+            functionList.Add(qbeFunction);
         }
         else
         {
             _globalFunctions.Add(qbeFunction);
         }
         
-        // Define the actual function body.
+        // Define the actual function body. We just add a lambda to the function bodies list, which will be executed later.
         _functionBodies.Add(() =>
         {
             if (function.Expressions.Count > 0)
             {
                 var start = qbeFunction.BuildEntryBlock();
                 _expressionConverter.CurrentBlock = start;
-                _blockStack.Push((start, new Dictionary<string, IQbeRef>()));
+                _blockStack.Push((start, new ()));
                 foreach (var expr in function.Expressions)
                 {
                     AddExpression(expr);
                 }
+                
+                // If the return type is void, add a return statement.
+                if (function.ReturnType.TypeLiteral == Literal.Void || function.IsConstructor)
+                    start.Return();
 
                 _blockStack.Pop();
             }
@@ -186,7 +211,7 @@ public class RumCodeGen(Rum rum, List<AstNode> astNodes, RumAnalyzer analyzer)
         // Do nothing if there are no expressions.
     }
 
-    private Stack<(QbeBlock block, Dictionary<string,IQbeRef> variables)> _blockStack = new();
+    private Stack<(QbeBlock block, Dictionary<string,(IQbeRef, IQbeTypeDefinition)> variables)> _blockStack = new();
 
     private void AddExpression(Expression expr)
     {

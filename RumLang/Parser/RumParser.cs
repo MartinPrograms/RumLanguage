@@ -22,8 +22,10 @@ public class RumParser : IDebugInfo
 
     private bool _isInFunction = false;
     private bool _isInClass = false;
+    private string _currentClassFullName = null!;
+    private string _currentFunctionName = null!;
 
-    private Stack<(string Namespace, List<AstNode> Nodes)> _namespaces = new();
+    private Stack<(string Namespace, List<AstNode> Nodes, NamespaceDeclarationExpression NamespaceDeclaration)> _namespaces = new();
     private List<AstNode> _currentNodes;
     
     public static readonly Dictionary<Operator, (float LeftPrecedence, float RightPrecedence)> PrecedenceMap = new()
@@ -137,9 +139,11 @@ public class RumParser : IDebugInfo
                     
                     var namespaceName = Peek()!.Value;
                     var nodes = new List<AstNode>();
-                    _currentNodes.Add(new NamespaceDeclarationExpression(namespaceName, nodes, GetLineNumber(), GetColumnNumber(), accessModifier));
+                    var declaration = new NamespaceDeclarationExpression(namespaceName, nodes, GetLineNumber(),
+                        GetColumnNumber(), accessModifier);
+                    _currentNodes.Add(declaration);
                     _currentNodes = nodes;
-                    _namespaces.Push((namespaceName, nodes));
+                    _namespaces.Push((namespaceName, nodes, declaration));
                     Advance();
                     if (!Match(Punctuation.LeftBrace))
                         throw new Exception("Expected \"{\" after namespace identifier!");
@@ -154,6 +158,15 @@ public class RumParser : IDebugInfo
                         throw new Exception("Can not declare class within function or class scope.");
                     }
                     _isInClass = true;
+                    List<NamespaceDeclarationExpression> namespaces = new List<NamespaceDeclarationExpression>();
+                    if (_namespaces.Count > 0)
+                    {
+                        namespaces = _namespaces
+                            .Select(ns => ns.NamespaceDeclaration)
+                            .Where(ns => ns != null)
+                            .Reverse().ToList();
+                    }
+                    
                     var accessModifier = AccessModifier.Private; // Default to private
                     if (Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Private ||
                         Peek()!.Keyword == Keyword.Internal || Peek()!.Keyword == Keyword.Public)
@@ -171,6 +184,9 @@ public class RumParser : IDebugInfo
                     Advance(); // Consume the class name
                     if (!Match(Punctuation.LeftBrace))
                         throw new Exception($"Expected \"{{\" after class name! At {Peek()}");
+                    
+                    // Set the current class full name for later use.
+                    _currentClassFullName = string.Join(".", namespaces.Select(ns => ns.Identifier).Append(className));
                     
                     // Now we are in a class scope, we can add class members.
                     List<FunctionDeclarationExpression> functions = new();
@@ -207,6 +223,9 @@ public class RumParser : IDebugInfo
                             Advance();
                             Advance(); // We are now in argument space.
 
+                            _isInFunction = true;
+                            _currentFunctionName = className;
+
                             bool isVariadic = false;
                             var arguments = GetArguments(ref isVariadic);
                             if (!Match(Punctuation.LeftBrace))
@@ -215,7 +234,11 @@ public class RumParser : IDebugInfo
                             var codeblock = ParseCodeBlock();
                             constructor = new FunctionDeclarationExpression(className, arguments,
                                 type,
-                                accessModifier, codeblock, isVariadic,GetLineNumber(), GetColumnNumber());
+                                accessModifier, codeblock, isVariadic,GetLineNumber(), GetColumnNumber(), true);
+
+                            _isInFunction = false;
+                            _currentFunctionName = null!;
+                            
                             continue;
                         }
 
@@ -242,6 +265,8 @@ public class RumParser : IDebugInfo
                         if (isFunction)
                         {
                             Advance(); // Now in argument space.
+                            _isInFunction = true;
+                            _currentFunctionName = name;
                             var isVariadic = false;
                             var arguments = GetArguments(ref isVariadic);
                             if (Match(Punctuation.Semicolon))
@@ -256,6 +281,9 @@ public class RumParser : IDebugInfo
                             var expressions = ParseCodeBlock(); // Also consumes the }
                             functions.Add(new FunctionDeclarationExpression(name, arguments, type,
                                 memberAccessModifier, expressions, isVariadic, GetLineNumber(), GetColumnNumber(), false));
+
+                            _isInFunction = false;
+                            _currentFunctionName = null!;
                             continue;
 
                         }
@@ -264,8 +292,10 @@ public class RumParser : IDebugInfo
                     // Now we can create the class itself
                     if (constructor != null)
                         functions.Add(constructor);
-                    _currentNodes.Add(new ClassDeclarationExpression(className, accessModifier, functions, variables, GetLineNumber(), GetColumnNumber()));
+                    
+                    _currentNodes.Add(new ClassDeclarationExpression(className,namespaces, accessModifier, functions, variables, GetLineNumber(), GetColumnNumber()));
                     _isInClass = false;
+                    _currentClassFullName = null!; // Reset the current class full name
                     continue;
                 }
 
@@ -274,6 +304,7 @@ public class RumParser : IDebugInfo
                     // Now consume the function!
                     bool hasAccessModifier = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Private ||
                                              Peek()!.Keyword == Keyword.Internal || Peek()!.Keyword == Keyword.Public;
+
 
                     AccessModifier accessModifier = AccessModifier.Private; // Default to private
                     if (hasAccessModifier)
@@ -285,7 +316,7 @@ public class RumParser : IDebugInfo
 
                         Advance();
                     }
-                    
+
                     bool isExported = Peek()!.Type == TokenType.Keyword && Peek()!.Keyword == Keyword.Export;
                     if (isExported)
                     {
@@ -302,6 +333,8 @@ public class RumParser : IDebugInfo
 
                     var functionType = GetMemberedType();
                     var functionName = Peek(1)!.Value;
+                    _isInFunction = true;
+                    _currentFunctionName = functionName;
 
                     Advance();
                     Advance();
@@ -330,7 +363,9 @@ public class RumParser : IDebugInfo
                     // Handle code block.
                     Advance(); // Consume the {
                     var expressions = ParseCodeBlock(); // Also consumes the }
-                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isVariadic, GetLineNumber(), GetColumnNumber(), isEntryPoint, isExported || isEntryPoint));
+                    _currentNodes.Add(new FunctionDeclarationExpression(functionName, arguments, functionType, accessModifier, expressions, isVariadic, GetLineNumber(), GetColumnNumber(), false,isEntryPoint, isExported || isEntryPoint));
+                    _isInFunction = false;
+                    _currentFunctionName = null!;
                     continue;
                 }
 
@@ -785,9 +820,9 @@ public class RumParser : IDebugInfo
         else if (Match(Keyword.This))
         {
             // This is a reference to the current instance in a class.
-            if (!_isInClass)
+            if (!_isInClass || !_isInFunction)
                 throw new Exception("The \"this\" keyword can only be used within a class scope.");
-            expr = new ThisExpression(GetLineNumber(), GetColumnNumber());
+            expr = new ThisExpression(_currentClassFullName, _currentFunctionName,GetLineNumber(), GetColumnNumber());
         }
         else
         {

@@ -31,4 +31,11 @@ public static class CodeGenHelpers
             ? $"{qbeType.Identifier}__{functionFunctionName}" 
             : functionFunctionName;
     }
+
+    public static string GetIdentifierFromPotentiallMemberedString(string id)
+    {
+        // Remove any member access (e.g., "object.member") and return the identifier
+        var parts = id.Split('.');
+        return parts.Length > 0 ? parts.Last() : id;
+    }
 }
